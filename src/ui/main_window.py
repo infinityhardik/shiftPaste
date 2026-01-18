@@ -4,8 +4,9 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLineEdit, QListWidget,
     QListWidgetItem, QLabel, QHBoxLayout
 )
-from PySide6.QtCore import Qt, Signal, QTimer, QSize
-from PySide6.QtGui import QFont, QCursor
+from PySide6.QtCore import Qt, Signal, QTimer, QSize, QEvent, QCoreApplication
+from PySide6.QtGui import QFont, QCursor, QKeyEvent
+from PySide6.QtWidgets import QApplication
 from typing import List, Dict, Any
 from datetime import datetime
 from .styles import get_stylesheet
@@ -126,6 +127,10 @@ class MainWindow(QWidget):
         self.is_visible = False  # Track visibility to prevent early close
         self._init_ui()
         self._setup_window()
+        # Install a global event filter to detect clicks outside the window
+        app = QCoreApplication.instance()
+        if app:
+            app.installEventFilter(self)
 
     def _init_ui(self):
         """Initialize UI components."""
@@ -195,25 +200,100 @@ class MainWindow(QWidget):
         else:
             self.showNormal()
 
-        self.is_visible = True  # Mark as visible
-        self.raise_()
-        self.activateWindow()
-        self.setWindowState(self.windowState() & ~Qt.WindowMinimized)
+        # Mark visible then use a short delayed activation to avoid
+        # focus races with global hotkeys or the taskbar.
+        self.is_visible = True
 
-        # Force window to foreground on Windows
-        import ctypes
-        import sys
-        if sys.platform == "win32":
+        # Show immediately then finalize activation shortly after
+        self.show()
+        self.setWindowState(self.windowState() & ~Qt.WindowMinimized)
+        self.raise_()
+
+        def _finalize():
             try:
-                hwnd = int(self.winId())
-                ctypes.windll.user32.ShowWindow(hwnd, 5)  # SW_SHOW
-                ctypes.windll.user32.SetForegroundWindow(hwnd)
+                self.activateWindow()
+                # Force window to foreground on Windows
+                import ctypes
+                import sys
+                if sys.platform == "win32":
+                    try:
+                        hwnd = int(self.winId())
+                        ctypes.windll.user32.ShowWindow(hwnd, 5)  # SW_SHOW
+                        # Use SetWindowPos topmost toggle to work around
+                        # Windows foreground restrictions.
+                        SWP_NOSIZE = 0x0001
+                        SWP_NOMOVE = 0x0002
+                        HWND_TOPMOST = -1
+                        HWND_NOTOPMOST = -2
+                        ctypes.windll.user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE)
+                        ctypes.windll.user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE)
+                        ctypes.windll.user32.SetForegroundWindow(hwnd)
+                    except Exception:
+                        pass
             except Exception:
                 pass
 
-        self.setFocus()
-        self.search_input.setFocus()
-        self.search_input.clear()
+            # Ensure focus goes to the search input
+            self.setFocus()
+            self.search_input.setFocus()
+            self.search_input.clear()
+
+        # Small delay lets OS finish processing input (modifier keys, clicks)
+        QTimer.singleShot(60, _finalize)
+
+    def eventFilter(self, obj, event):
+        """Global event filter to detect clicks outside this window.
+
+        When the user clicks anywhere outside while the popup is visible,
+        simulate an Escape key press so the UI closes consistently.
+        """
+        # Detect global mouse presses and close immediately if click is outside
+        if event.type() == QEvent.MouseButtonPress and self.is_visible:
+            try:
+                pos = event.globalPos()
+                # First try widgetAt which is more reliable for complex setups
+                clicked_widget = QApplication.widgetAt(pos)
+                inside = False
+                if clicked_widget:
+                    # If the clicked widget is this window or a child, treat as inside
+                    if clicked_widget is self or self.isAncestorOf(clicked_widget):
+                        inside = True
+
+                if not inside:
+                    # Close immediately and emit close signal
+                    try:
+                        self.close()
+                    except Exception:
+                        pass
+                    self.is_visible = False
+                    try:
+                        self.window_closed.emit()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+        return super().eventFilter(obj, event)
+
+    def closeEvent(self, event):
+        """Cleanup when window closes: remove event filter."""
+        try:
+            app = QCoreApplication.instance()
+            if app:
+                try:
+                    app.removeEventFilter(self)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        self.is_visible = False
+        try:
+            self.window_closed.emit()
+        except Exception:
+            pass
+
+        super().closeEvent(event)
 
     def update_results(self, items: List[Dict[str, Any]]):
         """Update results list.
@@ -284,11 +364,17 @@ class MainWindow(QWidget):
                 if row < len(self.current_items):
                     item = self.current_items[row]
                     if item.get('source_table') == 'clipboard':
+                        # Emit delete so the DB is updated
                         self.item_deleted.emit(item['id'])
-                        # Remove from display
+                        # Remove from display and from internal list
                         self.results_list.takeItem(row)
+                        try:
+                            self.current_items.pop(row)
+                        except Exception:
+                            pass
+
                         # Select next item
-                        if row < len(self.current_items) - 1:
+                        if row < len(self.current_items):
                             self.results_list.setCurrentRow(row)
                         elif row > 0:
                             self.results_list.setCurrentRow(row - 1)
@@ -316,9 +402,19 @@ class MainWindow(QWidget):
         Args:
             event: Focus out event
         """
-        # Only close if window is actually visible (not during initialization)
+        # Only close if window is actually visible (not during initialization).
+        # Use a short delayed check to avoid races right after show(),
+        # e.g. when global hotkey modifiers are still held or taskbar
+        # activation is racing with focus events.
         if self.is_visible:
-            self.close()
-            self.is_visible = False
-            self.window_closed.emit()
+            def _delayed_close():
+                # If window no longer has focus and no child has focus, close.
+                active = self.isActiveWindow() or self.search_input.hasFocus()
+                if not active and self.is_visible:
+                    self.close()
+                    self.is_visible = False
+                    self.window_closed.emit()
+
+            QTimer.singleShot(80, _delayed_close)
+
         super().focusOutEvent(event)

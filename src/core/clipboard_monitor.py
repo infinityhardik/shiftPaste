@@ -20,6 +20,7 @@ class ClipboardMonitor(QThread):
         super().__init__()
         self.running = False
         self.last_content = ""
+        self._ignore_next = False
         self.poll_interval = poll_interval
 
     def run(self):
@@ -32,8 +33,13 @@ class ClipboardMonitor(QThread):
 
                 # Only emit if content actually changed
                 if current_content and current_content != self.last_content:
-                    self.last_content = current_content
-                    self.clipboard_changed.emit(current_content)
+                    # If an internal paste just happened, ignore this one
+                    if getattr(self, "_ignore_next", False):
+                        self.last_content = current_content
+                        self._ignore_next = False
+                    else:
+                        self.last_content = current_content
+                        self.clipboard_changed.emit(current_content)
 
             except Exception as e:
                 print(f"Clipboard monitor error: {e}")
@@ -43,3 +49,7 @@ class ClipboardMonitor(QThread):
     def stop(self):
         """Stop the monitoring thread."""
         self.running = False
+
+    def ignore_next_change(self):
+        """Ignore the next clipboard change (used when application sets clipboard)."""
+        self._ignore_next = True

@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 from src.data.config_manager import ConfigManager
+from PySide6.QtWidgets import QFileDialog
 
 
 class SettingsWindow(QDialog):
@@ -110,6 +111,21 @@ class SettingsWindow(QDialog):
         )
         master_layout.addWidget(self.auto_reload_checkbox)
 
+        # Master directory path
+        master_dir_layout = QHBoxLayout()
+        master_dir_layout.addWidget(QLabel("Master directory:"))
+        self.master_dir_input = QLineEdit()
+        self.master_dir_input.setText(
+            self.config.get('master_file.directory', 'data/Master')
+        )
+        master_dir_layout.addWidget(self.master_dir_input)
+
+        browse_btn = QPushButton("Browse...")
+        browse_btn.clicked.connect(self._browse_master_dir)
+        master_dir_layout.addWidget(browse_btn)
+
+        master_layout.addLayout(master_dir_layout)
+
         master_group.setLayout(master_layout)
 
         # UI settings
@@ -187,6 +203,8 @@ class SettingsWindow(QDialog):
         self.config.set('shortcuts.linux', self.linux_shortcut_input.text())
 
         self.config.set('master_file.auto_reload', self.auto_reload_checkbox.isChecked())
+        # Save master directory
+        self.config.set('master_file.directory', self.master_dir_input.text())
 
         self.config.set('ui.theme', self.theme_combo.currentText().lower())
         self.config.set('ui.max_visible_items', self.visible_spinbox.value())
@@ -195,3 +213,10 @@ class SettingsWindow(QDialog):
 
         self.settings_changed.emit()
         self.close()
+
+    def _browse_master_dir(self):
+        """Open a directory chooser to pick master files directory."""
+        start_dir = self.master_dir_input.text() or '.'
+        directory = QFileDialog.getExistingDirectory(self, "Select Master Directory", start_dir)
+        if directory:
+            self.master_dir_input.setText(directory)

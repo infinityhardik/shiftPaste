@@ -2,7 +2,7 @@
 
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QMessageBox
 from PySide6.QtGui import QIcon
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import QTimer, Qt, QAbstractNativeEventFilter, QCoreApplication
 import sys
 import keyboard
 import pyperclip
@@ -27,6 +27,9 @@ class ShiftPasteApp:
         self.app = QApplication(sys.argv)
         self.app.setQuitOnLastWindowClosed(False)
 
+        # Load and set application icon early so windows/taskbar pick it up
+        self._load_app_icon()
+
         # Initialize components
         self.config = ConfigManager()
         self.db = Database()
@@ -47,6 +50,10 @@ class ShiftPasteApp:
         # State
         self.is_window_open = False
         self.last_hotkey = ""
+        # Windows native hotkey state
+        self._hotkey_registered = False
+        self._hotkey_id = 1
+        self._native_filter = None
 
         self._setup_ui()
         self._setup_services()
@@ -65,6 +72,26 @@ class ShiftPasteApp:
 
         self._setup_tray_icon()
 
+    def _load_app_icon(self):
+        """Load application icon and set it on QApplication."""
+        from PySide6.QtGui import QIcon
+        icon_path = Path("resources/icons/app_icon.png")
+        try:
+            if icon_path.exists():
+                icon = QIcon(str(icon_path))
+            else:
+                from PySide6.QtGui import QPixmap, QColor
+                pixmap = QPixmap(64, 64)
+                pixmap.fill(QColor("#0078d4"))
+                icon = QIcon(pixmap)
+
+            try:
+                self.app.setWindowIcon(icon)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
     def _setup_tray_icon(self):
         """Create system tray icon."""
         # Try to find app icon
@@ -77,6 +104,12 @@ class ShiftPasteApp:
             icon = QIcon(pixmap)
         else:
             icon = QIcon(str(icon_path))
+
+        # Apply icon to application and windows so taskbar shows same icon
+        try:
+            self.app.setWindowIcon(icon)
+        except Exception:
+            pass
 
         self.tray_icon = QSystemTrayIcon(icon)
 
@@ -101,6 +134,13 @@ class ShiftPasteApp:
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.activated.connect(self._on_tray_activated)
         self.tray_icon.show()
+
+        # Ensure main window (if created) has same icon
+        try:
+            if self.main_window:
+                self.main_window.setWindowIcon(icon)
+        except Exception:
+            pass
 
     def _setup_services(self):
         """Initialize background services."""
@@ -130,14 +170,85 @@ class ShiftPasteApp:
             hotkey = self.config.get('shortcuts.linux', 'shift+super+v')
 
         try:
-            # Wrap hotkey callback to ensure it runs safely in main thread
-            def hotkey_callback():
-                # Use QTimer to schedule the toggle in the main thread
-                QTimer.singleShot(0, self.toggle_main_window)
-            
-            keyboard.add_hotkey(hotkey, hotkey_callback, suppress=True)
-            self.last_hotkey = hotkey
-            print(f"Hotkey registered: {hotkey}")
+            if system == "Windows":
+                # Use native RegisterHotKey to avoid external dependency issues
+                import ctypes
+                user32 = ctypes.windll.user32
+
+                def _parse_hotkey(hk: str):
+                    parts = hk.lower().split('+')
+                    mods = 0
+                    vk = 0
+                    MODIFIERS = {
+                        'alt': 0x0001,
+                        'ctrl': 0x0002,
+                        'control': 0x0002,
+                        'shift': 0x0004,
+                        'win': 0x0008,
+                        'super': 0x0008,
+                        'cmd': 0x0008
+                    }
+
+                    for p in parts:
+                        p = p.strip()
+                        if p in MODIFIERS:
+                            mods |= MODIFIERS[p]
+                        else:
+                            # Take first character as virtual key for letters
+                            if len(p) == 1:
+                                vk = ord(p.upper())
+                            else:
+                                # Try common names
+                                vk = ord(p[0].upper()) if p[0].isalpha() else 0
+
+                    return mods, vk
+
+                mods, vk = _parse_hotkey(hotkey)
+                if vk == 0:
+                    raise ValueError(f"Could not parse hotkey: {hotkey}")
+
+                if not user32.RegisterHotKey(None, self._hotkey_id, mods, vk):
+                    # Fallback to 'keyboard' library if native registration fails
+                    try:
+                        def hotkey_callback():
+                            QTimer.singleShot(0, self.toggle_main_window)
+
+                        keyboard.add_hotkey(hotkey, hotkey_callback, suppress=True)
+                        self.last_hotkey = hotkey
+                        print(f"Fallback hotkey registered (keyboard lib): {hotkey}")
+                        return
+                    except Exception:
+                        raise OSError("RegisterHotKey failed")
+
+                class _NativeFilter(QAbstractNativeEventFilter):
+                    def __init__(self, outer):
+                        super().__init__()
+                        self.outer = outer
+
+                    def nativeEventFilter(self, eventType, message):
+                        try:
+                            msg = ctypes.wintypes.MSG.from_address(int(message))
+                            # WM_HOTKEY == 0x0312
+                            if msg.message == 0x0312:
+                                QTimer.singleShot(0, self.outer.toggle_main_window)
+                                return True, 0
+                        except Exception:
+                            pass
+                        return False, 0
+
+                self._native_filter = _NativeFilter(self)
+                QCoreApplication.instance().installNativeEventFilter(self._native_filter)
+                self._hotkey_registered = True
+                self.last_hotkey = hotkey
+                print(f"Native hotkey registered: {hotkey}")
+            else:
+                # Fallback to keyboard module for non-Windows platforms
+                def hotkey_callback():
+                    QTimer.singleShot(0, self.toggle_main_window)
+
+                keyboard.add_hotkey(hotkey, hotkey_callback, suppress=True)
+                self.last_hotkey = hotkey
+                print(f"Hotkey registered (keyboard lib): {hotkey}")
         except Exception as e:
             print(f"Error registering hotkey: {e}")
             QMessageBox.warning(
@@ -271,6 +382,12 @@ class ShiftPasteApp:
 
         # Copy to clipboard
         pyperclip.copy(content)
+        # Tell clipboard monitor to ignore the change caused by our own copy
+        try:
+            if self.clipboard_monitor:
+                self.clipboard_monitor.ignore_next_change()
+        except Exception:
+            pass
 
         # Simulate Ctrl+V
         try:
@@ -312,7 +429,33 @@ class ShiftPasteApp:
     def _on_settings_changed(self):
         """Handle settings changes."""
         # Reload config
+        old_master_dir = None
+        try:
+            old_master_dir = str(self.excel_manager.master_directory)
+        except Exception:
+            old_master_dir = None
+
         self.config.load()
+
+        # Handle master file directory change
+        new_master_dir = self.config.get('master_file.directory', 'data/Master')
+        if old_master_dir != new_master_dir:
+            try:
+                # Stop previous watcher and replace manager
+                if self.excel_manager:
+                    self.excel_manager.stop_watching()
+
+                self.excel_manager = ExcelManager(new_master_dir)
+
+                # Start watching if enabled
+                if self.config.get('master_file.auto_reload', True):
+                    self.excel_manager.start_watching()
+
+                # Reload master files into DB
+                self._load_master_files()
+                print(f"Master directory changed: {old_master_dir} -> {new_master_dir}")
+            except Exception as e:
+                print(f"Error updating master directory: {e}")
 
         # Re-setup hotkeys if they changed
         old_hotkey = self.last_hotkey
@@ -325,20 +468,29 @@ class ShiftPasteApp:
         else:
             new_hotkey = self.config.get('shortcuts.linux', 'shift+super+v')
 
-        if new_hotkey != old_hotkey:
-            try:
-                keyboard.remove_hotkey(old_hotkey)
-                
-                # Wrap hotkey callback to ensure it runs safely
-                def hotkey_callback():
-                    from PySide6.QtCore import QTimer
-                    QTimer.singleShot(0, self.toggle_main_window)
-                
-                keyboard.add_hotkey(new_hotkey, hotkey_callback, suppress=True)
-                self.last_hotkey = new_hotkey
-                print(f"Hotkey changed: {old_hotkey} -> {new_hotkey}")
-            except Exception as e:
-                print(f"Error updating hotkey: {e}")
+            if new_hotkey != old_hotkey:
+                try:
+                    system = platform.system()
+                    if system == "Windows" and self._hotkey_registered:
+                        # Unregister native hotkey
+                        import ctypes
+                        user32 = ctypes.windll.user32
+                        user32.UnregisterHotKey(None, self._hotkey_id)
+                        if self._native_filter:
+                            QCoreApplication.instance().removeNativeEventFilter(self._native_filter)
+                            self._native_filter = None
+                        self._hotkey_registered = False
+                    else:
+                        try:
+                            keyboard.remove_hotkey(old_hotkey)
+                        except Exception:
+                            pass
+
+                    # Register new hotkey by re-calling setup
+                    self._setup_hotkeys()
+                    print(f"Hotkey changed: {old_hotkey} -> {new_hotkey}")
+                except Exception as e:
+                    print(f"Error updating hotkey: {e}")
 
     def _clear_clipboard(self):
         """Clear clipboard history."""
@@ -363,6 +515,19 @@ class ShiftPasteApp:
 
         if self.db.conn:
             self.db.close()
+
+        # Unregister native hotkey on Windows
+        try:
+            if platform.system() == "Windows" and self._hotkey_registered:
+                import ctypes
+                user32 = ctypes.windll.user32
+                user32.UnregisterHotKey(None, self._hotkey_id)
+                if self._native_filter:
+                    QCoreApplication.instance().removeNativeEventFilter(self._native_filter)
+                    self._native_filter = None
+                self._hotkey_registered = False
+        except Exception:
+            pass
 
         self.app.quit()
 
