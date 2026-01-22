@@ -2,12 +2,11 @@
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QSpinBox, QComboBox, QCheckBox, QGroupBox
+    QPushButton, QSpinBox, QComboBox, QCheckBox, QGroupBox,
+    QFileDialog, QListWidget, QListWidgetItem, QScrollArea, QWidget
 )
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont
-from src.data.config_manager import ConfigManager
-from PySide6.QtWidgets import QFileDialog
+from PySide6.QtGui import QFont, QIcon
 
 
 class SettingsWindow(QDialog):
@@ -15,208 +14,207 @@ class SettingsWindow(QDialog):
 
     settings_changed = Signal()
 
-    def __init__(self, config: ConfigManager, parent=None):
-        """Initialize settings window.
-
-        Args:
-            config: ConfigManager instance
-            parent: Parent widget
-        """
+    def __init__(self, db, parent=None):
+        """Initialize settings window."""
         super().__init__(parent)
-        self.config = config
+        self.db = db
         self.setWindowTitle("Shift Paste Settings")
-        self.setGeometry(100, 100, 500, 600)
+        self.setFixedSize(500, 650)
         self._init_ui()
 
     def _init_ui(self):
-        """Initialize UI components."""
-        layout = QVBoxLayout()
+        """Initialize UI components based on technical specifications."""
+        main_layout = QVBoxLayout(self)
+        
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        
+        content_widget = QWidget()
+        layout = QVBoxLayout(content_widget)
+        layout.setSpacing(15)
 
-        # Clipboard settings
-        clipboard_group = QGroupBox("Clipboard")
-        clipboard_layout = QVBoxLayout()
+        # 1. Hotkey
+        hotkey_group = QGroupBox("Hotkey")
+        hk_layout = QVBoxLayout()
+        hk_sub = QHBoxLayout()
+        self.hotkey_input = QLineEdit(self.db.get_setting('hotkey', 'Ctrl+Shift+V'))
+        hk_sub.addWidget(self.hotkey_input)
+        hk_sub.addWidget(QPushButton("Change"))
+        hk_layout.addLayout(hk_sub)
+        hotkey_group.setLayout(hk_layout)
+        layout.addWidget(hotkey_group)
 
-        # Max items
-        max_items_layout = QHBoxLayout()
-        max_items_layout.addWidget(QLabel("Max items to store:"))
-        self.max_items_spinbox = QSpinBox()
-        self.max_items_spinbox.setMinimum(10)
-        self.max_items_spinbox.setMaximum(500)
-        self.max_items_spinbox.setValue(
-            self.config.get('clipboard.max_items', 20)
-        )
-        max_items_layout.addWidget(self.max_items_spinbox)
-        max_items_layout.addStretch()
+        # 2. Clipboard History
+        history_group = QGroupBox("Clipboard History")
+        hist_layout = QVBoxLayout()
+        
+        limit_layout = QHBoxLayout()
+        limit_layout.addWidget(QLabel("History Limit:"))
+        self.limit_combo = QComboBox()
+        self.limit_combo.addItems(["25", "50", "100", "200", "Unlimited"])
+        self.limit_combo.setCurrentText(self.db.get_setting('history_limit', '50'))
+        limit_layout.addWidget(self.limit_combo)
+        hist_layout.addLayout(limit_layout)
 
-        # Preview chars
-        preview_layout = QHBoxLayout()
-        preview_layout.addWidget(QLabel("Preview characters:"))
-        self.preview_spinbox = QSpinBox()
-        self.preview_spinbox.setMinimum(50)
-        self.preview_spinbox.setMaximum(200)
-        self.preview_spinbox.setValue(
-            self.config.get('clipboard.preview_chars', 100)
-        )
-        preview_layout.addWidget(self.preview_spinbox)
-        preview_layout.addStretch()
+        prev_layout = QHBoxLayout()
+        prev_layout.addWidget(QLabel("Max Characters:"))
+        self.max_chars = QSpinBox()
+        self.max_chars.setRange(20, 200)
+        self.max_chars.setValue(int(self.db.get_setting('preview_length', 50)))
+        prev_layout.addWidget(self.max_chars)
+        
+        prev_layout.addWidget(QLabel("Max Lines:"))
+        self.max_lines = QSpinBox()
+        self.max_lines.setRange(1, 5)
+        self.max_lines.setValue(int(self.db.get_setting('preview_max_lines', 2)))
+        prev_layout.addWidget(self.max_lines)
+        hist_layout.addLayout(prev_layout)
 
-        clipboard_layout.addLayout(max_items_layout)
-        clipboard_layout.addLayout(preview_layout)
-        clipboard_group.setLayout(clipboard_layout)
+        self.cb_formatting = QCheckBox("Preserve text formatting (RTF/HTML)")
+        self.cb_formatting.setChecked(self.db.get_setting('preserve_formatting', 'False') == 'True')
+        hist_layout.addWidget(self.cb_formatting)
 
-        # Shortcuts settings
-        shortcuts_group = QGroupBox("Keyboard Shortcuts")
-        shortcuts_layout = QVBoxLayout()
+        self.cb_timestamps = QCheckBox("Show timestamps")
+        self.cb_timestamps.setChecked(self.db.get_setting('show_timestamps', 'True') == 'True')
+        hist_layout.addWidget(self.cb_timestamps)
+        
+        clear_layout = QHBoxLayout()
+        clear_layout.addWidget(QLabel("Auto-clear:"))
+        self.clear_combo = QComboBox()
+        self.clear_combo.addItems(["Never", "Daily", "Weekly"])
+        self.clear_combo.setCurrentText(self.db.get_setting('auto_clear', 'Never'))
+        clear_layout.addWidget(self.clear_combo)
+        hist_layout.addLayout(clear_layout)
 
-        # Windows shortcut
-        win_shortcut_layout = QHBoxLayout()
-        win_shortcut_layout.addWidget(QLabel("Windows:"))
-        self.win_shortcut_input = QLineEdit()
-        self.win_shortcut_input.setText(
-            self.config.get('shortcuts.windows', 'shift+win+v')
-        )
-        win_shortcut_layout.addWidget(self.win_shortcut_input)
+        history_group.setLayout(hist_layout)
+        layout.addWidget(history_group)
 
-        # macOS shortcut
-        mac_shortcut_layout = QHBoxLayout()
-        mac_shortcut_layout.addWidget(QLabel("macOS:"))
-        self.mac_shortcut_input = QLineEdit()
-        self.mac_shortcut_input.setText(
-            self.config.get('shortcuts.macos', 'shift+cmd+v')
-        )
-        mac_shortcut_layout.addWidget(self.mac_shortcut_input)
-
-        # Linux shortcut
-        linux_shortcut_layout = QHBoxLayout()
-        linux_shortcut_layout.addWidget(QLabel("Linux:"))
-        self.linux_shortcut_input = QLineEdit()
-        self.linux_shortcut_input.setText(
-            self.config.get('shortcuts.linux', 'shift+super+v')
-        )
-        linux_shortcut_layout.addWidget(self.linux_shortcut_input)
-
-        shortcuts_layout.addLayout(win_shortcut_layout)
-        shortcuts_layout.addLayout(mac_shortcut_layout)
-        shortcuts_layout.addLayout(linux_shortcut_layout)
-        shortcuts_group.setLayout(shortcuts_layout)
-
-        # Master files settings
+        # 3. Master Files
         master_group = QGroupBox("Master Files")
-        master_layout = QVBoxLayout()
+        m_layout = QVBoxLayout()
+        self.cb_enable_masters = QCheckBox("Enable Master Search")
+        self.cb_enable_masters.setChecked(self.db.get_setting('enable_masters', 'True') == 'True')
+        m_layout.addWidget(self.cb_enable_masters)
 
-        # Auto reload
-        self.auto_reload_checkbox = QCheckBox("Auto-reload when Excel files change")
-        self.auto_reload_checkbox.setChecked(
-            self.config.get('master_file.auto_reload', True)
-        )
-        master_layout.addWidget(self.auto_reload_checkbox)
-
-        # Master directory path
-        master_dir_layout = QHBoxLayout()
-        master_dir_layout.addWidget(QLabel("Master directory:"))
-        self.master_dir_input = QLineEdit()
-        self.master_dir_input.setText(
-            self.config.get('master_file.directory', 'data/Master')
-        )
-        master_dir_layout.addWidget(self.master_dir_input)
-
-        browse_btn = QPushButton("Browse...")
-        browse_btn.clicked.connect(self._browse_master_dir)
-        master_dir_layout.addWidget(browse_btn)
-
-        master_layout.addLayout(master_dir_layout)
-
-        master_group.setLayout(master_layout)
-
-        # UI settings
-        ui_group = QGroupBox("User Interface")
-        ui_layout = QVBoxLayout()
-
-        # Theme
-        theme_layout = QHBoxLayout()
-        theme_layout.addWidget(QLabel("Theme:"))
-        self.theme_combo = QComboBox()
-        self.theme_combo.addItems(["System", "Light", "Dark"])
-        current_theme = self.config.get('ui.theme', 'system').capitalize()
-        self.theme_combo.setCurrentText(current_theme)
-        theme_layout.addWidget(self.theme_combo)
-        theme_layout.addStretch()
-
-        # Max visible items
-        visible_layout = QHBoxLayout()
-        visible_layout.addWidget(QLabel("Max visible items:"))
-        self.visible_spinbox = QSpinBox()
-        self.visible_spinbox.setMinimum(5)
-        self.visible_spinbox.setMaximum(20)
-        self.visible_spinbox.setValue(
-            self.config.get('ui.max_visible_items', 8)
-        )
-        visible_layout.addWidget(self.visible_spinbox)
-        visible_layout.addStretch()
-
-        ui_layout.addLayout(theme_layout)
-        ui_layout.addLayout(visible_layout)
-        ui_group.setLayout(ui_layout)
-
-        # Startup settings
-        startup_group = QGroupBox("Startup")
-        startup_layout = QVBoxLayout()
-
-        self.autostart_checkbox = QCheckBox("Run on system startup")
-        self.autostart_checkbox.setChecked(
-            self.config.get('startup.run_on_boot', False)
-        )
-        startup_layout.addWidget(self.autostart_checkbox)
-
-        startup_group.setLayout(startup_layout)
-
-        # Buttons
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-
-        save_button = QPushButton("Save")
-        save_button.clicked.connect(self._save_settings)
-        button_layout.addWidget(save_button)
-
-        cancel_button = QPushButton("Cancel")
-        cancel_button.clicked.connect(self.close)
-        button_layout.addWidget(cancel_button)
-
-        # Main layout
-        layout.addWidget(clipboard_group)
-        layout.addWidget(shortcuts_group)
+        self.master_list = QListWidget()
+        self._load_master_files()
+        m_layout.addWidget(self.master_list)
+        
+        m_buttons = QHBoxLayout()
+        btn_add = QPushButton("+ Add Master File")
+        btn_add.clicked.connect(self._add_master_file)
+        m_buttons.addWidget(btn_add)
+        m_layout.addLayout(m_buttons)
+        
+        master_group.setLayout(m_layout)
         layout.addWidget(master_group)
-        layout.addWidget(ui_group)
-        layout.addWidget(startup_group)
-        layout.addStretch()
-        layout.addLayout(button_layout)
 
-        self.setLayout(layout)
+        # 4. Startup & Security
+        security_group = QGroupBox("Startup & Security")
+        sec_layout = QVBoxLayout()
+        self.cb_startup = QCheckBox("Run on system startup")
+        self.cb_startup.setChecked(self.db.get_setting('run_on_startup', 'True') == 'True')
+        sec_layout.addWidget(self.cb_startup)
+        
+        self.cb_exclude_pass = QCheckBox("Exclude password managers")
+        self.cb_exclude_pass.setChecked(self.db.get_setting('exclude_password_managers', 'True') == 'True')
+        sec_layout.addWidget(self.cb_exclude_pass)
+        
+        security_group.setLayout(sec_layout)
+        layout.addWidget(security_group)
 
-    def _save_settings(self):
-        """Save settings to config."""
-        self.config.set('clipboard.max_items', self.max_items_spinbox.value())
-        self.config.set('clipboard.preview_chars', self.preview_spinbox.value())
+        # 5. Application Exclusion (New Feature)
+        exclude_group = QGroupBox("Exclude Hotkey in Apps")
+        ex_layout = QVBoxLayout()
+        ex_layout.addWidget(QLabel("Ignore shortcut when these apps are active:"))
+        self.exclude_list = QListWidget()
+        # Initial defaults if needed or load from DB
+        excluded_apps = self.db.get_setting('excluded_apps', 'Excel.exe,Winword.exe').split(',')
+        for app in excluded_apps:
+            if app: self.exclude_list.addItem(app)
+        
+        ex_layout.addWidget(self.exclude_list)
+        ex_btns = QHBoxLayout()
+        self.app_input = QLineEdit()
+        self.app_input.setPlaceholderText("e.g. Photoshop.exe")
+        ex_btns.addWidget(self.app_input)
+        btn_add_app = QPushButton("Add")
+        btn_add_app.clicked.connect(self._add_excluded_app)
+        ex_btns.addWidget(btn_add_app)
+        ex_layout.addLayout(ex_btns)
+        
+        exclude_group.setLayout(ex_layout)
+        layout.addWidget(exclude_group)
 
-        self.config.set('shortcuts.windows', self.win_shortcut_input.text())
-        self.config.set('shortcuts.macos', self.mac_shortcut_input.text())
-        self.config.set('shortcuts.linux', self.linux_shortcut_input.text())
+        # 6. Advanced
+        adv_group = QGroupBox("Advanced")
+        adv_layout = QVBoxLayout()
+        
+        delay_layout = QHBoxLayout()
+        delay_layout.addWidget(QLabel("Search delay (ms):"))
+        self.search_delay = QSpinBox()
+        self.search_delay.setRange(0, 1000)
+        self.search_delay.setValue(int(self.db.get_setting('search_debounce_ms', 100)))
+        delay_layout.addWidget(self.search_delay)
+        adv_layout.addLayout(delay_layout)
+        
+        adv_group.setLayout(adv_layout)
+        layout.addWidget(adv_group)
 
-        self.config.set('master_file.auto_reload', self.auto_reload_checkbox.isChecked())
-        # Save master directory
-        self.config.set('master_file.directory', self.master_dir_input.text())
+        scroll.setWidget(content_widget)
+        main_layout.addWidget(scroll)
 
-        self.config.set('ui.theme', self.theme_combo.currentText().lower())
-        self.config.set('ui.max_visible_items', self.visible_spinbox.value())
+        # Form Buttons
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        btn_save = QPushButton("Save")
+        btn_save.clicked.connect(self._save_all)
+        btn_save.setStyleSheet("background-color: #0078d4; color: white; padding: 8px 20px;")
+        btn_layout.addWidget(btn_save)
+        btn_cancel = QPushButton("Cancel")
+        btn_cancel.clicked.connect(self.close)
+        btn_layout.addWidget(btn_cancel)
+        main_layout.addLayout(btn_layout)
 
-        self.config.set('startup.run_on_boot', self.autostart_checkbox.isChecked())
+    def _load_master_files(self):
+        self.master_list.clear()
+        cursor = self.db.conn.cursor()
+        cursor.execute("SELECT id, file_path, is_enabled FROM master_files")
+        for row in cursor.fetchall():
+            self.master_list.addItem(f"{row['file_path']} ({'Enabled' if row['is_enabled'] else 'Disabled'})")
+
+    def _add_master_file(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "Select Excel Master File", "", "Excel Files (*.xlsx)")
+        if file_path:
+            self.db.add_master_file(file_path)
+            self._load_master_files()
+
+    def _add_excluded_app(self):
+        app = self.app_input.text().strip()
+        if app:
+            self.exclude_list.addItem(app)
+            self.app_input.clear()
+
+    def _save_all(self):
+        """Persist all settings to the DB."""
+        self.db.set_setting('hotkey', self.hotkey_input.text())
+        self.db.set_setting('history_limit', self.limit_combo.currentText())
+        self.db.set_setting('preview_length', self.max_chars.value())
+        self.db.set_setting('preview_max_lines', self.max_lines.value())
+        self.db.set_setting('preserve_formatting', self.cb_formatting.isChecked())
+        self.db.set_setting('show_timestamps', self.cb_timestamps.isChecked())
+        self.db.set_setting('auto_clear', self.clear_combo.currentText())
+        self.db.set_setting('enable_masters', self.cb_enable_masters.isChecked())
+        self.db.set_setting('run_on_startup', self.cb_startup.isChecked())
+        self.db.set_setting('exclude_password_managers', self.cb_exclude_pass.isChecked())
+        self.db.set_setting('search_debounce_ms', self.search_delay.value())
+        
+        # Save excluded apps
+        apps = []
+        for i in range(self.exclude_list.count()):
+            apps.append(self.exclude_list.item(i).text())
+        self.db.set_setting('excluded_apps', ','.join(apps))
 
         self.settings_changed.emit()
         self.close()
-
-    def _browse_master_dir(self):
-        """Open a directory chooser to pick master files directory."""
-        start_dir = self.master_dir_input.text() or '.'
-        directory = QFileDialog.getExistingDirectory(self, "Select Master Directory", start_dir)
-        if directory:
-            self.master_dir_input.setText(directory)
