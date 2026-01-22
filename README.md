@@ -82,3 +82,5 @@ For detailed distribution instructions, see [HOW_TO_BUILD.md](file:///c:/Users/H
 
 ---
 **Built for power users who need speed and precision.**
+
+**Developers**: InfinityHardik + Antigravity (Gemini + CLaude) AI

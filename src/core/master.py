@@ -39,6 +39,7 @@ class MasterPollingThread(QThread):
 
     def stop(self):
         self.running = False
+        self.wait()
 
 class MasterManager:
     """Manages master file indexing and polling."""

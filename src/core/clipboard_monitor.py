@@ -124,6 +124,7 @@ class ClipboardMonitor(QThread):
     def stop(self):
         """Stop the monitoring thread."""
         self.running = False
+        self.wait()
 
     def ignore_next_change(self):
         """Signal to ignore the next detected change (internal copy)."""
