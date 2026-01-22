@@ -92,12 +92,12 @@ class MasterManager:
     """Manages master file indexing and polling.
     
     Architecture:
-    - Scans data/Master directory on startup for Excel files
+    - Uses proper user data directory for master files
     - Maintains indexed content in SQLite for fast searching
     - Polls for file changes and rebuilds index when modified
     """
 
-    DEFAULT_MASTER_DIR = "data/Master"
+    DEFAULT_MASTER_DIR = None  # Will be resolved dynamically
 
     def __init__(self, db, master_dir: Optional[str] = None):
         """Initialize master manager.
@@ -107,7 +107,19 @@ class MasterManager:
             master_dir: Directory containing master Excel files
         """
         self.db = db
-        self.master_dir = master_dir or self.DEFAULT_MASTER_DIR
+        
+        # Use provided path or resolve proper user data location
+        if master_dir:
+            self.master_dir = master_dir
+        else:
+            # Use paths utility for proper directory resolution
+            try:
+                from src.utils.paths import get_master_files_dir
+                self.master_dir = str(get_master_files_dir())
+            except ImportError:
+                # Fallback for development mode
+                self.master_dir = "data/Master"
+        
         self._polling_thread: Optional[MasterPollingThread] = None
         
         # Ensure master directory exists

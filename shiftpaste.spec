@@ -15,14 +15,24 @@ import sys
 block_cipher = None
 
 # Collect data files
-datas = [
-    ('src', 'src'),  # Include source for resources
-]
+datas = []
+
+# Add resources if they exist
+if os.path.exists('resources'):
+    datas.append(('resources', 'resources'))
+
+# CRITICAL: Add data directory for database and configs
+# This is likely why clipboard reading fails - the app needs its data directory
+if os.path.exists('data'):
+    datas.append(('data', 'data'))
+
+# Add any config files in root
+for config_file in ['config.json', 'settings.json', 'config.ini']:
+    if os.path.exists(config_file):
+        datas.append((config_file, '.'))
 
 # Add icons if they exist
 icon_path = 'resources/icons/app_icon.ico'
-if os.path.exists(icon_path):
-    datas.append(('resources/icons', 'resources/icons'))
 
 # Analysis configuration
 a = Analysis(
@@ -41,7 +51,7 @@ a = Analysis(
         'openpyxl.cell._writer',
         # System utilities
         'psutil',
-        # Windows-specific
+        # Windows-specific (clipboard related)
         'pynput.keyboard._win32',
         'pynput.mouse._win32',
         'win32gui',
@@ -52,6 +62,11 @@ a = Analysis(
         'winreg',
         # Clipboard
         'pyperclip',
+        # Additional Windows clipboard support
+        'ctypes',
+        'ctypes.wintypes',
+        # Path utilities for frozen executable
+        'src.utils.paths',
     ],
     hookspath=[],
     hooksconfig={},

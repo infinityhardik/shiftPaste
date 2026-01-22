@@ -76,6 +76,7 @@ The installer includes:
 - Start menu entry
 - Auto-start option
 - Uninstaller
+- **Automatic app closing** - If Shift Paste is running during install/uninstall, you'll be prompted to close it automatically (prevents "file in use" errors)
 
 ---
 

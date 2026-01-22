@@ -57,13 +57,32 @@ class SystemTrayManager(QObject):
 
     def _load_custom_icon(self) -> Optional[QIcon]:
         """Try to load custom application icon."""
-        # Check for icon in common locations
-        possible_paths = [
+        # Use paths utility for proper icon resolution in frozen executables
+        try:
+            from src.utils.paths import get_icon_path, get_app_dir, get_resource_dir
+            
+            # Check using the paths utility
+            possible_paths = [
+                str(get_icon_path("app_icon.ico")),
+                str(get_icon_path("app_icon.png")),
+                # Also check relative to resource directory
+                str(get_resource_dir() / "resources" / "icons" / "app_icon.ico"),
+                str(get_app_dir() / "resources" / "icons" / "app_icon.ico"),
+            ]
+        except ImportError:
+            # Fallback for testing or if paths module is not available
+            possible_paths = [
+                "resources/icons/app_icon.ico",
+                "resources/icons/app_icon.png",
+            ]
+        
+        # Also add the old relative paths as fallback
+        possible_paths.extend([
             "resources/icons/app_icon.ico",
             "resources/icons/app_icon.png",
             os.path.join(os.path.dirname(__file__), "..", "..", "resources", "icons", "app_icon.ico"),
             os.path.join(os.path.dirname(__file__), "..", "..", "resources", "icons", "app_icon.png"),
-        ]
+        ])
         
         for path in possible_paths:
             if os.path.exists(path):

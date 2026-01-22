@@ -5,6 +5,7 @@ Design decisions:
 - Row factory for dict-like access to query results
 - Connection pooling via check_same_thread=False (safe for this use case)
 - Comprehensive migration support for schema evolution
+- Uses proper user data directory for portable deployments
 
 Security:
 - All queries use parameterized statements (no SQL injection)
@@ -16,6 +17,13 @@ import hashlib
 from datetime import datetime
 from typing import List, Optional, Dict, Any, Tuple
 from pathlib import Path
+
+# Import path utilities for proper database location resolution
+try:
+    from src.utils.paths import get_database_path, migrate_old_data
+except ImportError:
+    # Fallback for direct module testing
+    from utils.paths import get_database_path, migrate_old_data
 
 
 class Database:
@@ -30,15 +38,26 @@ class Database:
     # Current schema version - bump when making schema changes
     SCHEMA_VERSION = 2
     
-    DEFAULT_DB_PATH = "data/clipboard.db"
+    # Use proper user data directory for database
+    DEFAULT_DB_PATH = None  # Will be resolved dynamically
 
     def __init__(self, db_path: Optional[str] = None):
         """Initialize database connection and create schema if needed.
         
         Args:
-            db_path: Path to SQLite database file
+            db_path: Path to SQLite database file. If None, uses the proper
+                     user data directory location.
         """
-        self.db_path = db_path or self.DEFAULT_DB_PATH
+        # Migrate old data from previous installations before setting up
+        migrate_old_data()
+        
+        # Use provided path or resolve proper user data location
+        if db_path:
+            self.db_path = db_path
+        else:
+            self.db_path = str(get_database_path())
+        
+        print(f"[*] Using database: {self.db_path}")
         self.conn: Optional[sqlite3.Connection] = None
         self._init_database()
 

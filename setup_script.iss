@@ -4,11 +4,11 @@
 [Setup]
 AppId={{D3B3C8E4-7E2A-4F1B-9A5C-B23D1F1D4E5E}
 AppName=Shift Paste
-AppVersion=1.0
+AppVersion=1.1.0
 AppPublisher=Hardik Bhaavani
 DefaultDirName={autopf}\Shift Paste
 DefaultGroupName=Shift Paste
-OutputDir=.
+OutputDir=dist
 OutputBaseFilename=ShiftPaste_Setup
 Compression=lzma
 SolidCompression=yes
@@ -16,19 +16,26 @@ WizardStyle=modern
 ; Icon for the installer itself
 SetupIconFile=resources\icons\app_icon.ico
 UninstallDisplayIcon={app}\ShiftPaste.exe
+; Request admin privileges for Program Files installation
+PrivilegesRequired=admin
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
-Name: "autostart"; Description: "Automatically start Shift Paste on login"; GroupDescription: "Post-installation:"; Flags: sorted
+Name: "autostart"; Description: "Automatically start Shift Paste on login"; GroupDescription: "Post-installation:"
 
 [Files]
+; Main executable - bundled with all dependencies via PyInstaller
 Source: "dist\ShiftPaste.exe"; DestDir: "{app}"; Flags: ignoreversion
-; Include resources folder in the installation directory if needed (though bundled, sometimes helpful for settings/logs)
+
+; Include resources folder for external icons (optional, app has fallback)
 Source: "resources\*"; DestDir: "{app}\resources"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+; NOTE: User data (database, master files) is now stored in %LOCALAPPDATA%\ShiftPaste
+; This allows proper write access and persists across updates
+; The 'data' folder is no longer copied to Program Files
 
 [Icons]
 Name: "{group}\Shift Paste"; Filename: "{app}\ShiftPaste.exe"; IconFilename: "{app}\ShiftPaste.exe"
@@ -42,5 +49,106 @@ Filename: "{app}\ShiftPaste.exe"; Description: "{cm:LaunchProgram,Shift Paste}";
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "ShiftPaste"; ValueData: """{app}\ShiftPaste.exe"""; Flags: uninsdeletevalue; Tasks: autostart
 
 [UninstallDelete]
-Type: filesandordirs; Name: "{app}\data"
+; Clean up app directory on uninstall
 Type: filesandordirs; Name: "{app}"
+
+[Code]
+const
+  AppExeName = 'ShiftPaste.exe';
+
+// Function to check if a process is running
+function IsAppRunning(): Boolean;
+var
+  ResultCode: Integer;
+begin
+  // Use tasklist to check if the process exists
+  // The exit code is 0 if process is found, non-zero otherwise
+  Result := Exec('cmd.exe', '/c tasklist /FI "IMAGENAME eq ' + AppExeName + '" | find /I "' + AppExeName + '"',
+                 '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
+end;
+
+// Function to close the running application
+function CloseApp(): Boolean;
+var
+  ResultCode: Integer;
+begin
+  Result := True;
+  if IsAppRunning() then
+  begin
+    Log('ShiftPaste is running. Attempting to close it...');
+    // Use taskkill to gracefully terminate the process
+    // /IM = image name, /F = force termination
+    if Exec('taskkill.exe', '/IM ' + AppExeName + ' /F', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+    begin
+      // Give the process a moment to fully terminate
+      Sleep(1000);
+      Log('ShiftPaste has been closed.');
+      Result := True;
+    end
+    else
+    begin
+      Log('Failed to close ShiftPaste.');
+      Result := False;
+    end;
+  end
+  else
+  begin
+    Log('ShiftPaste is not running.');
+  end;
+end;
+
+// Called at the start of the installation process
+function InitializeSetup(): Boolean;
+begin
+  Result := True;
+  // Close the app if running (for upgrades/reinstalls)
+  if IsAppRunning() then
+  begin
+    if MsgBox('Shift Paste is currently running and needs to be closed before installation can continue.' + #13#10 + #13#10 +
+              'Do you want to close it now?', mbConfirmation, MB_YESNO) = IDYES then
+    begin
+      if not CloseApp() then
+      begin
+        MsgBox('Failed to close Shift Paste. Please close it manually and try again.', mbError, MB_OK);
+        Result := False;
+      end;
+    end
+    else
+    begin
+      Result := False;
+    end;
+  end;
+end;
+
+// Called at the start of the uninstallation process
+function InitializeUninstall(): Boolean;
+begin
+  Result := True;
+  // Close the app if running before uninstall
+  if IsAppRunning() then
+  begin
+    if MsgBox('Shift Paste is currently running and needs to be closed before uninstallation can continue.' + #13#10 + #13#10 +
+              'Do you want to close it now?', mbConfirmation, MB_YESNO) = IDYES then
+    begin
+      if not CloseApp() then
+      begin
+        MsgBox('Failed to close Shift Paste. Please close it manually and try again.', mbError, MB_OK);
+        Result := False;
+      end;
+    end
+    else
+    begin
+      Result := False;
+    end;
+  end;
+end;
+
+// Show a message during installation about data location
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then
+  begin
+    // Log the data directory location for troubleshooting
+    Log('User data will be stored in: ' + ExpandConstant('{localappdata}\ShiftPaste'));
+  end;
+end;
