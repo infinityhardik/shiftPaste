@@ -68,6 +68,7 @@ The project has been simplified for maximum performance:
 
 - **Hotkey Fails**: Ensure no other application (like Windows Clipboard) is hogging `Ctrl+Shift+V`. You can change the hotkey in the settings.
 - **Excel Not Updating**: Ensure your Excel file is in `.xlsx` format and stored in the `data/Master` folder.
+- **Build Error (pathlib)**: If you see an error about `pathlib` being an obsolete backport during build, run: `pip uninstall pathlib` and try again.
 - **App Won't Open**: Check the terminal output. On Windows, ensure `pywin32` and `psutil` are correctly installed.
 
 ## Building Executable
@@ -75,7 +76,7 @@ The project has been simplified for maximum performance:
 You can package Shift Paste into a single `.exe` file using PyInstaller:
 
 1. Install PyInstaller: `pip install pyinstaller`
-2. Run the build: `pyinstaller build.spec --clean`
+2. Run the build: `pyinstaller shiftpaste.spec --clean`
 3. Find your app in `dist/ShiftPaste.exe`
 
 For detailed distribution instructions, see [HOW_TO_BUILD.md](file:///c:/Users/Hardik%20Bhaavani/Desktop/shiftPaste/HOW_TO_BUILD.md).

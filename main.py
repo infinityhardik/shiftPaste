@@ -11,6 +11,12 @@ from src.app import ShiftPasteApp
 
 def main():
     """Main entry point for Shift Paste."""
+    # Set AppUserModelID for Windows Taskbar icon support
+    if sys.platform == 'win32':
+        import ctypes
+        myappid = u'infinityhardik.shiftpaste.1.0'
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+        
     app = ShiftPasteApp()
     sys.exit(app.run())
 

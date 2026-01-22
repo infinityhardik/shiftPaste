@@ -13,8 +13,9 @@ OutputBaseFilename=ShiftPaste_Setup
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
-; Icon for the installer (once you convert the PNG to ICO)
-; SetupIconFile=resources\icons\app_icon.ico
+; Icon for the installer itself
+SetupIconFile=resources\icons\app_icon.ico
+UninstallDisplayIcon={app}\ShiftPaste.exe
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -25,16 +26,21 @@ Name: "autostart"; Description: "Automatically start Shift Paste on login"; Grou
 
 [Files]
 Source: "dist\ShiftPaste.exe"; DestDir: "{app}"; Flags: ignoreversion
-; Add other necessary files here (like data folder structure if needed)
-; Source: "data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Include resources folder in the installation directory if needed (though bundled, sometimes helpful for settings/logs)
+Source: "resources\*"; DestDir: "{app}\resources"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\Shift Paste"; Filename: "{app}\ShiftPaste.exe"
-Name: "{commondesktop}\Shift Paste"; Filename: "{app}\ShiftPaste.exe"; Tasks: desktopicon
+Name: "{group}\Shift Paste"; Filename: "{app}\ShiftPaste.exe"; IconFilename: "{app}\ShiftPaste.exe"
+Name: "{commondesktop}\Shift Paste"; Filename: "{app}\ShiftPaste.exe"; IconFilename: "{app}\ShiftPaste.exe"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\ShiftPaste.exe"; Description: "{cm:LaunchProgram,Shift Paste}"; Flags: nowait postinstall skipifsilent
 
 [Registry]
-; Handle autostart task
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "ShiftPaste"; ValueData: """{app}\ShiftPaste.exe"""; Tasks: autostart
+; Handle autostart task via Registry Run key
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "ShiftPaste"; ValueData: """{app}\ShiftPaste.exe"""; Flags: uninsdeletevalue; Tasks: autostart
+
+[UninstallDelete]
+Type: filesandordirs; Name: "{app}\data"
+Type: filesandordirs; Name: "{app}"

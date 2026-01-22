@@ -6,7 +6,6 @@ __pycache__/
 .Python
 build/
 develop-eggs/
-dist/
 downloads/
 eggs/
 .eggs/
@@ -42,9 +41,7 @@ config.json
 
 # Excel temp files
 data/Master/~*.xlsx
-
-# PyInstaller
-*.spec
+data/~*.db
 
 # IDEs
 .vscode/

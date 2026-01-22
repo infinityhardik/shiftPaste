@@ -12,13 +12,27 @@ pip install pyinstaller
 Use the provided `.spec` file to package the application. This will handle all the icons, hidden imports, and internal structure correctly.
 
 ```bash
-pyinstaller build.spec --clean
+pyinstaller shiftpaste.spec --clean
 ```
 
 ### 3. Locate your EXE
 Once the process completes:
 - You will find a single standalone file: `dist/ShiftPaste.exe`.
 - You can distribute this file alone; it contains everything needed to run.
+
+---
+
+### Troubleshooting Common Build Issues
+
+#### Error: "The 'pathlib' package is an obsolete backport..."
+This occurs on newer Python versions (like 3.13) if the old `pathlib` backport is installed. To fix:
+```bash
+pip uninstall pathlib
+```
+Then run the pyinstaller build command again.
+
+#### Error: "__file__ is not defined"
+This happens if the `.spec` file uses `__file__` (which PyInstaller doesn't support in spec files). The provided `shiftpaste.spec` has already been fixed to use `os.getcwd()` instead.
 
 ---
 
