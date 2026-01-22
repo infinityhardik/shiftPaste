@@ -1,50 +1,171 @@
-# How to create an EXE for Shift Paste
+# Building Shift Paste
 
-To create a standalone executable for Windows, follow these steps:
+This guide explains how to build Shift Paste into a standalone Windows executable.
 
-### 1. Install PyInstaller
-Ensure you have the build tool installed:
+---
+
+## Prerequisites
+
+1. **Python 3.10+** installed
+2. **Dependencies installed**: `pip install -r requirements.txt`
+3. **PyInstaller**: `pip install pyinstaller`
+
+---
+
+## Quick Build
+
 ```bash
-pip install pyinstaller
+# Build single-file executable
+pyinstaller shiftpaste.spec --clean
 ```
 
-### 2. Run the Build Command
-Use the provided `.spec` file to package the application. This will handle all the icons, hidden imports, and internal structure correctly.
+**Output:** `dist/ShiftPaste.exe`
+
+This single file contains everything needed to run the application.
+
+---
+
+## Build Options
+
+### Debug Build (with console)
+
+For troubleshooting, create a build with visible console output:
+
+```bash
+# Edit shiftpaste.spec and change:
+#   console=False  →  console=True
+# Then rebuild:
+pyinstaller shiftpaste.spec --clean
+```
+
+### Smaller Build (without UPX)
+
+If UPX causes antivirus issues:
+
+```bash
+# Edit shiftpaste.spec and change:
+#   upx=True  →  upx=False
+# Then rebuild:
+pyinstaller shiftpaste.spec --clean
+```
+
+---
+
+## Creating a Windows Installer
+
+For a professional "Next → Next → Finish" installer:
+
+### 1. Download Inno Setup
+
+Get it from: https://jrsoftware.org/isdl.php
+
+### 2. Build the EXE First
 
 ```bash
 pyinstaller shiftpaste.spec --clean
 ```
 
-### 3. Locate your EXE
-Once the process completes:
-- You will find a single standalone file: `dist/ShiftPaste.exe`.
-- You can distribute this file alone; it contains everything needed to run.
+### 3. Compile the Installer
+
+1. Open `setup_script.iss` in Inno Setup Compiler
+2. Click **Build → Compile** (or press F9)
+3. Output: `ShiftPaste_Setup.exe`
+
+The installer includes:
+- Desktop shortcut (optional)
+- Start menu entry
+- Auto-start option
+- Uninstaller
 
 ---
 
-### Troubleshooting Common Build Issues
+## Troubleshooting Build Issues
 
-#### Error: "The 'pathlib' package is an obsolete backport..."
-This occurs on newer Python versions (like 3.13) if the old `pathlib` backport is installed. To fix:
+### "pathlib is an obsolete backport"
+
 ```bash
 pip uninstall pathlib
+pyinstaller shiftpaste.spec --clean
 ```
-Then run the pyinstaller build command again.
 
-#### Error: "__file__ is not defined"
-This happens if the `.spec` file uses `__file__` (which PyInstaller doesn't support in spec files). The provided `shiftpaste.spec` has already been fixed to use `os.getcwd()` instead.
+### "__file__ is not defined"
+
+The spec file uses `os.getcwd()` instead of `__file__`. If you see this error, ensure you're running from the project root.
+
+### "DLL not found" at runtime
+
+Install the Visual C++ Redistributable:
+https://aka.ms/vs/17/release/vc_redist.x64.exe
+
+### Build takes too long
+
+PyInstaller analyzes all imports. First build is slow, subsequent builds are faster due to caching.
+
+### Antivirus flags the exe
+
+Some antivirus software flags PyInstaller executables. Options:
+1. Disable UPX compression (`upx=False` in spec)
+2. Sign the executable with a code signing certificate
+3. Submit false positive report to your antivirus vendor
 
 ---
 
-### Pro Tip: Creating a "Full Installer"
-If you want a professional installer (the kind with a "Next > Next > Finish" wizard), I have provided a pre-configured **Inno Setup script**:
+## Distribution Checklist
 
-1. **Download**: [Inno Setup](https://jrsoftware.org/isdl.php)
-2. **Icon**: I have generated a premium icon for you at `resources/icons/app_icon.png`. For the best results, convert this to an `.ico` file (using an online converter) and save it as `resources/icons/app_icon.ico`.
-3. **Build**:
-   - Open `setup_script.iss` in Inno Setup.
-   - Click **Compile**.
-   - It will generate a `ShiftPaste_Setup.exe` that handles installation, desktop shortcuts, and even auto-start configuration!
+Before distributing:
+
+- [ ] Test on a clean Windows machine (or VM)
+- [ ] Verify hotkey works
+- [ ] Verify system tray icon appears
+- [ ] Test paste functionality in multiple apps
+- [ ] Test settings persistence
+- [ ] Verify no console window appears
 
 ---
-**Happy Packaging!**
+
+## Deployment Locations
+
+The application uses these data directories:
+
+| Path | Purpose |
+|------|---------|
+| `data/clipboard.db` | SQLite database |
+| `data/Master/` | Excel master files |
+| `resources/icons/` | Application icons |
+
+When installed via Inno Setup, these are created in the installation directory.
+
+---
+
+## Version Information
+
+To embed version info in the exe, create `version_info.txt`:
+
+```text
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(1, 1, 0, 0),
+    prodvers=(1, 1, 0, 0),
+    OS=0x40004,
+    fileType=0x1,
+  ),
+  kids=[
+    StringFileInfo([
+      StringTable(
+        u'040904B0',
+        [StringStruct(u'CompanyName', u'InfinityHardik'),
+         StringStruct(u'FileDescription', u'Shift Paste Clipboard Manager'),
+         StringStruct(u'FileVersion', u'1.1.0'),
+         StringStruct(u'ProductName', u'Shift Paste'),
+         StringStruct(u'ProductVersion', u'1.1.0')])
+    ]),
+    VarFileInfo([VarStruct(u'Translation', [1033, 1200])])
+  ]
+)
+```
+
+Then rebuild - PyInstaller will automatically include it.
+
+---
+
+**Happy Packaging! 📦**

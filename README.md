@@ -1,87 +1,183 @@
 # Shift Paste
 
-**Shift Paste** is a high-performance, cross-platform clipboard manager that enhances your productivity with precise fuzzy search and persistent Excel-based collections. It provides a premium, Windows-native feel with intelligent ranking and effortless organization.
+> **A high-performance clipboard manager with fuzzy search and Excel-based master collections.**
 
-## Key Features
+Shift Paste enhances your productivity with intelligent clipboard history, precise sequential search, and persistent snippet libraries stored in Excel files. Built with a Windows-native feel and optimized for power users.
 
-✨ **Clipboard History** - Automatically stores your clipboard history with optional text formatting preservation.
-🔍 **Sequential Search** - Advanced left-to-right character matching (e.g., search "1884" for "18 mm 8 x 4").
-📁 **Master Files** - Keep your frequently used snippets in Excel files; they are automatically synced and ready to search.
-⚡ **Instant Access** - Global hotkey (Ctrl+Shift+V) to launch instantly. The UI closes automatically when you paste or lose focus.
-🎯 **Smart Ranking** - Results are ranked by a combination of recency and match quality. Consecutive character matches are prioritized.
-💾 **Robust Storage** - All history and settings are stored in a lightweight SQLite database (`data/clipboard.db`).
-🚫 **App Exclusion** - Disable the hotkey in specific apps (like Photoshop or Excel) to avoid shortcut conflicts.
-
-## Quick Start
-
-### Requirements
-- Python 3.10+
-- Dependencies: `PySide6`, `pyperclip`, `openpyxl`, `pynput`, `psutil`, `pywin32`
-
-### Installation & Usage
-1. **Clone** the repository.
-2. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. **Run the application**:
-   ```bash
-   python main.py
-   ```
-4. **Hotkey**: Press `Ctrl+Shift+V` to open the search bar. Use arrow keys or type to find an item, then press **Enter** to paste it directly into your active window.
-
-## Search Logic
-
-Shift Paste uses a precise **Left-to-Right Sequential Matching** algorithm:
-- It finds every character of your search term in the text, in the order they appear.
-- Spaces in your search term are ignored to allow one-string matching.
-- **Example**: Search "ro" or "LP" or "1884" to find `18 mm 8 x 4 LL Pro`.
-- **Ranking**: A "Match Quality" score is calculated based on the span of the match. Consecutive characters (like "Pro") rank higher than scattered ones (like "1884").
-
-## Maintenance & Configuration
-
-### Data Registry
-- **Database**: `data/clipboard.db` stores your history, master items, and settings.
-- **Master Files**: Store your Excel sheets in `data/Master/`. Any files added here are automatically scanned and indexed on startup.
-- **Polling**: The app polls for changes in your Excel files every 1 second (using modification time), so edits are available almost instantly.
-
-### Settings
-Settings are managed entirely via the **Settings Window** in the app. No manual JSON editing is required.
-1. Right-click the system tray icon and select **Settings**, or use the gear icon in the search window.
-2. You can configure:
-   - **Hotkey**: Custom shortcut registration.
-   - **History Limit**: Max items to keep in history.
-   - **Exclusions**: Add/Remove apps where the hotkey should be disabled.
-   - **Master Files**: Manage which Excel sheets are actively searched.
-
-## Architecture
-
-The project has been simplified for maximum performance:
-- `src/app.py`: Main application controller and logic.
-- `src/core/search_engine.py`: The sequential fuzzy search implementation.
-- `src/core/master.py`: Handles Excel indexing and modification polling.
-- `src/core/clipboard_monitor.py`: Background thread detecting clipboard changes.
-- `src/utils/hotkey.py`: Native Windows API integration for global hotkeys.
-- `src/data/database.py`: All storage, settings, and search filtering.
-
-## Troubleshooting
-
-- **Hotkey Fails**: Ensure no other application (like Windows Clipboard) is hogging `Ctrl+Shift+V`. You can change the hotkey in the settings.
-- **Excel Not Updating**: Ensure your Excel file is in `.xlsx` format and stored in the `data/Master` folder.
-- **Build Error (pathlib)**: If you see an error about `pathlib` being an obsolete backport during build, run: `pip uninstall pathlib` and try again.
-- **App Won't Open**: Check the terminal output. On Windows, ensure `pywin32` and `psutil` are correctly installed.
-
-## Building Executable
-
-You can package Shift Paste into a single `.exe` file using PyInstaller:
-
-1. Install PyInstaller: `pip install pyinstaller`
-2. Run the build: `pyinstaller shiftpaste.spec --clean`
-3. Find your app in `dist/ShiftPaste.exe`
-
-For detailed distribution instructions, see [HOW_TO_BUILD.md](file:///c:/Users/Hardik%20Bhaavani/Desktop/shiftPaste/HOW_TO_BUILD.md).
+![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)
+![PySide6](https://img.shields.io/badge/UI-PySide6-green.svg)
+![Windows](https://img.shields.io/badge/Platform-Windows-blue.svg)
 
 ---
-**Built for power users who need speed and precision.**
 
-**Developers**: InfinityHardik + Antigravity (Gemini + CLaude) AI
+## ✨ Key Features
+
+| Feature | Description |
+|---------|-------------|
+| 📋 **Clipboard History** | Automatically captures and stores your clipboard history with deduplication |
+| 🔍 **Sequential Search** | Left-to-right character matching (search "1884" to find "18 mm 8 x 4") |
+| 📁 **Master Files** | Keep frequently used snippets in Excel files, automatically indexed |
+| ⚡ **Instant Access** | Global hotkey (`Ctrl+Shift+V`) launches instantly near your cursor |
+| 🎯 **Smart Ranking** | Results ranked by recency + match quality, with consecutive matches prioritized |
+| 🔒 **Security-Aware** | Automatically excludes password manager content from history |
+| 🚫 **App Exclusion** | Disable the hotkey in specific apps (Photoshop, Excel, etc.) |
+
+---
+
+## 🚀 Quick Start
+
+### Requirements
+- **Python 3.10+** (tested with 3.11, 3.12, 3.13)
+- **Windows 10/11** (primary platform)
+
+### Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/infinityhardik/shiftPaste.git
+cd shiftPaste
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the application
+python main.py
+```
+
+### Usage
+
+1. **Press `Ctrl+Shift+V`** to open the clipboard manager
+2. **Type to search** - characters are matched in order across the entire text
+3. **Arrow keys** to navigate, **Enter** to paste
+4. **Escape** or click outside to close
+
+---
+
+## 🔍 Search Algorithm
+
+Shift Paste uses **Left-to-Right Sequential Matching**:
+
+- Characters are found in order, but can be separated by any text
+- Spaces in your search are ignored
+- Consecutive matches rank higher than scattered ones
+
+**Examples:**
+| Search | Matches |
+|--------|---------|
+| `ro` | "18 mm P**ro** Model" |
+| `LP` | "18 mm 8 x 4 L**L** **P**ro" |
+| `1884` | "**18** mm **8** x **4** LL Pro" |
+
+---
+
+## ⚙️ Configuration
+
+### Settings Window
+Right-click the system tray icon → **Settings**, or press `Ctrl+,` in the popup.
+
+Available options:
+- **Hotkey**: Custom keyboard shortcut
+- **History Limit**: 25 / 50 / 100 / 200 / 500 / Unlimited
+- **Master Files**: Add/remove Excel files for snippet search
+- **App Exclusions**: List of applications where hotkey is disabled
+- **Startup**: Run on Windows login
+- **Security**: Exclude password manager clipboard content
+
+### Data Storage
+- **Database**: `data/clipboard.db` (SQLite)
+- **Master Files**: Place Excel files in `data/Master/` for automatic indexing
+
+---
+
+## 🏗️ Architecture
+
+```
+shiftpaste/
+├── main.py                 # Entry point
+├── src/
+│   ├── app.py              # Main application controller
+│   ├── core/
+│   │   ├── clipboard_monitor.py  # Background clipboard watcher
+│   │   ├── search_engine.py      # Fuzzy search implementation
+│   │   ├── master.py             # Excel file indexing
+│   │   └── paste.py              # Focus restoration & paste
+│   ├── data/
+│   │   └── database.py           # SQLite storage layer
+│   ├── ui/
+│   │   ├── main_window.py        # Popup window
+│   │   ├── settings_window.py    # Settings dialog
+│   │   ├── tray.py               # System tray icon
+│   │   └── styles.py             # QSS stylesheets
+│   └── utils/
+│       ├── hotkey.py             # Global hotkey via Win32 API
+│       ├── autostart.py          # Windows startup registration
+│       └── platform_utils.py     # Active process detection
+├── data/
+│   ├── clipboard.db              # SQLite database (created on first run)
+│   └── Master/                   # Excel master files
+└── resources/
+    └── icons/                    # Application icons
+```
+
+---
+
+## 📦 Building an Executable
+
+Create a standalone `.exe` with PyInstaller:
+
+```bash
+# Install build dependencies
+pip install pyinstaller
+
+# Build single-file executable
+pyinstaller shiftpaste.spec --clean
+
+# Output: dist/ShiftPaste.exe
+```
+
+### Creating an Installer
+
+For a professional Windows installer:
+
+1. Install [Inno Setup](https://jrsoftware.org/isdl.php)
+2. Build the exe first: `pyinstaller shiftpaste.spec --clean`
+3. Open `setup_script.iss` in Inno Setup Compiler
+4. Click **Build → Compile**
+5. Output: `ShiftPaste_Setup.exe`
+
+---
+
+## 🔧 Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| Hotkey doesn't work | Another app may use `Ctrl+Shift+V`. Change it in Settings. |
+| Excel file not updating | Ensure file is `.xlsx` format and in `data/Master/` |
+| `pathlib` error during build | Run `pip uninstall pathlib` (obsolete backport) |
+| Missing DLLs error | Install [Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe) |
+| High CPU usage | Increase search delay in Advanced settings |
+
+---
+
+## 🔒 Security Features
+
+- **Password Manager Exclusion**: Content copied from KeePass, 1Password, Bitwarden, LastPass, Dashlane, and others is automatically excluded from history
+- **No Network Access**: The app is fully offline - no data leaves your machine
+- **User-Level Storage**: All data stored in user directory, no admin required
+- **Content Hashing**: Deduplication uses SHA-256 hashing, not raw content comparison
+
+---
+
+## 📄 License
+
+MIT License - See [LICENSE](LICENSE) for details.
+
+---
+
+## 👥 Credits
+
+**Developed by:** [InfinityHardik](https://github.com/infinityhardik) + AI assistants (Gemini, Claude)
+
+---
+
+*Built for power users who need speed and precision.*

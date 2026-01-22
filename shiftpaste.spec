@@ -1,42 +1,87 @@
-"""PyInstaller build specification for Shift Paste"""
+# -*- mode: python ; coding: utf-8 -*-
+"""PyInstaller build specification for Shift Paste.
 
-import sys
+Build command:
+    pyinstaller shiftpaste.spec --clean
+
+Output:
+    dist/ShiftPaste.exe - Single standalone executable
+"""
+
 import os
-from pathlib import Path
+import sys
 
+# Suppress block_cipher deprecation - using default (None)
 block_cipher = None
 
+# Collect data files
+datas = [
+    ('src', 'src'),  # Include source for resources
+]
+
+# Add icons if they exist
+icon_path = 'resources/icons/app_icon.ico'
+if os.path.exists(icon_path):
+    datas.append(('resources/icons', 'resources/icons'))
+
+# Analysis configuration
 a = Analysis(
     ['main.py'],
     pathex=[os.getcwd()],
     binaries=[],
-    datas=[
-        ('src', 'src'),
-    ],
+    datas=datas,
     hiddenimports=[
+        # Qt modules
         'PySide6.QtCore',
-        'PySide6.QtGui',
+        'PySide6.QtGui', 
         'PySide6.QtWidgets',
+        # Data handling
         'openpyxl',
+        'openpyxl.cell._reader',
+        'openpyxl.cell._writer',
+        # System utilities
         'psutil',
+        # Windows-specific
         'pynput.keyboard._win32',
         'pynput.mouse._win32',
         'win32gui',
+        'win32con',
         'win32process',
         'win32clipboard',
+        'win32api',
+        'winreg',
+        # Clipboard
+        'pyperclip',
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludedimports=['pandas', 'watchdog', 'pyautogui', 'keyboard'],
+    # Exclude large unused packages
+    excludes=[
+        'pandas',
+        'numpy', 
+        'watchdog',
+        'pyautogui',
+        'keyboard',
+        'matplotlib',
+        'scipy',
+        'PIL',
+        'cv2',
+        'tensorflow',
+        'torch',
+        'tkinter',
+        '_tkinter',
+    ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
     noarchive=False,
 )
 
+# Create PYZ archive
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
+# Executable configuration
 exe = EXE(
     pyz,
     a.scripts,
@@ -48,25 +93,35 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
-    upx_exclude=[],
+    upx=True,  # Enable UPX compression for smaller size
+    upx_exclude=[
+        'vcruntime140.dll',
+        'python*.dll',
+        'Qt*.dll',
+    ],
     runtime_tmpdir=None,
-    console=False,
+    console=False,  # No console window (GUI app)
     disable_windowed_traceback=False,
-    target_arch=None,
+    target_arch=None,  # Auto-detect
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,
+    icon=icon_path if os.path.exists(icon_path) else None,
+    version='version_info.txt' if os.path.exists('version_info.txt') else None,
 )
 
+# macOS bundle configuration (only used on macOS)
 if sys.platform == 'darwin':
     app = BUNDLE(
         exe,
         name='ShiftPaste.app',
         icon='resources/icons/app_icon.icns',
-        bundle_identifier='com.shiftpaste.app',
+        bundle_identifier='com.infinityhardik.shiftpaste',
         info_plist={
             'NSPrincipalClass': 'NSApplication',
-            'NSHighResolutionCapable': 'True',
+            'NSHighResolutionCapable': True,
+            'CFBundleShortVersionString': '1.1.0',
+            'CFBundleVersion': '1.1.0',
+            'LSMinimumSystemVersion': '10.13.0',
+            'NSAppleEventsUsageDescription': 'Shift Paste needs to control other applications to paste content.',
         },
     )

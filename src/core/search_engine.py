@@ -1,4 +1,16 @@
-"""Fuzzy search engine for clipboard and master items."""
+"""Fuzzy search engine for clipboard and master items.
+
+Search Algorithm: Left-to-Right Sequential Matching
+- Finds characters in order across the entire text content
+- Characters can be separated by any amount of text
+- Spaces in search term are ignored for flexible matching
+
+Ranking Formula:
+    score = (0.7 × recency) + (0.3 × quality)
+    
+- Recency uses exponential decay (recent items score higher)
+- Quality measures how compact the match is (consecutive chars score higher)
+"""
 
 import math
 from datetime import datetime
@@ -6,68 +18,112 @@ from typing import List, Dict, Any, Tuple, Optional
 
 
 class FuzzySearchEngine:
-    """
-    Fuzzy search engine with left-to-right character matching.
+    """Fuzzy search engine with left-to-right character matching.
     
-    Finds characters in sequential order across the entire text content.
-    Characters can be separated by any amount of text in between.
+    Thread Safety: This class is stateless except for configuration,
+    making it safe to use from multiple threads.
     """
+    
+    # Ranking weights
+    DEFAULT_RECENCY_WEIGHT = 0.7
+    DEFAULT_QUALITY_WEIGHT = 0.3
+    
+    # Time decay constants
+    CLIPBOARD_DECAY_SECONDS = 86400   # 24 hours for clipboard items
+    MASTER_DECAY_SECONDS = 604800     # 7 days for master items
 
-    def __init__(self):
-        """Initialize search engine with default settings."""
-        self.recency_weight = 0.7
-        self.quality_weight = 0.3
-        self.clipboard_decay_seconds = 86400  # 24 hours
-        self.master_decay_seconds = 604800    # 7 days
+    def __init__(
+        self, 
+        recency_weight: float = DEFAULT_RECENCY_WEIGHT,
+        quality_weight: float = DEFAULT_QUALITY_WEIGHT
+    ):
+        """Initialize search engine with configurable weights.
+        
+        Args:
+            recency_weight: Weight for recency score (0-1)
+            quality_weight: Weight for match quality score (0-1)
+        """
+        # Normalize weights to sum to 1
+        total = recency_weight + quality_weight
+        self.recency_weight = recency_weight / total if total > 0 else 0.7
+        self.quality_weight = quality_weight / total if total > 0 else 0.3
 
     def fuzzy_left_to_right_match(self, search_term: str, text: str) -> Tuple[bool, float]:
-        """
-        Match characters in left-to-right order across entire text.
+        """Match characters in left-to-right order across entire text.
         
-        Algorithm (as requested):
-        1. Normalize search (lowercase, remove spaces)
-        2. For each character, use text.find(char, position) to find it starting from the last position
+        Algorithm:
+        1. Normalize search term (lowercase, remove spaces)
+        2. For each character, find it in text starting from last position
         3. If found, move position forward and continue
         4. If not found, return no match
+        
+        Args:
+            search_term: The search query
+            text: The text to search in
+            
+        Returns:
+            Tuple of (is_match: bool, quality_score: float)
+            - is_match: True if all characters found in order
+            - quality_score: 0.0-1.0, higher = better match quality
         """
+        # Empty search matches everything
         if not search_term:
             return True, 1.0
         
-        # Step 1: Normalize search term
+        # Normalize search term: lowercase and remove spaces
         search_chars = search_term.lower().replace(' ', '')
         if not search_chars:
             return True, 1.0
             
-        # Step 2: Normalize text
+        # Normalize text for matching
         text_lower = text.lower()
         
-        # Step 3: Find each character sequentially
+        if not text_lower:
+            return False, 0.0
+        
+        # Find each character sequentially
         position = 0
-        positions = []
+        positions: List[int] = []
         
         for char in search_chars:
-            position = text_lower.find(char, position)
-            if position == -1:
+            pos = text_lower.find(char, position)
+            if pos == -1:
+                # Character not found - no match
                 return False, 0.0
-            positions.append(position)
-            position += 1  # Move past the found character
-            
-        # Step 4: Quality Score (for ranking)
-        first = positions[0]
-        last = positions[-1]
-        span = last - first + 1
+            positions.append(pos)
+            position = pos + 1  # Move past the found character
+        
+        # Calculate quality score based on match span
+        # Consecutive matches score higher than scattered ones
+        first_pos = positions[0]
+        last_pos = positions[-1]
+        span = last_pos - first_pos + 1
+        
+        # Base quality: ratio of search length to span
+        # Perfect consecutive match: quality = 1.0
         quality = len(search_chars) / span
         
-        # Exact substring bonus
-        # Treat the text as if spaces didn't exist for the purpose of exact match bonus
+        # Bonus for substring matches (ignoring spaces in text)
         text_no_spaces = text_lower.replace(' ', '')
         if search_chars in text_no_spaces:
-            quality = min(1.0, quality * 1.5) # Increased bonus for consecutive matches
-            
+            quality = min(1.0, quality * 1.5)
+        
         return True, quality
 
     def _parse_datetime(self, date_val: Any) -> datetime:
-        """Parse various datetime formats, return current time if invalid."""
+        """Parse various datetime formats, return current time if invalid.
+        
+        Supported formats:
+        - datetime object
+        - SQLite format: "YYYY-MM-DD HH:MM:SS"
+        - ISO format: "YYYY-MM-DDTHH:MM:SS"
+        
+        Args:
+            date_val: Datetime value in various formats
+            
+        Returns:
+            Parsed datetime or current time if parsing fails
+        """
         now = datetime.now()
         
         if not date_val:
@@ -77,7 +133,7 @@ class FuzzySearchEngine:
             return date_val
         
         if isinstance(date_val, str):
-            # Try SQLite format: "YYYY-MM-DD HH:MM:SS"
+            # Try SQLite format first (most common in our DB)
             try:
                 return datetime.strptime(date_val, "%Y-%m-%d %H:%M:%S")
             except ValueError:
@@ -85,63 +141,78 @@ class FuzzySearchEngine:
             
             # Try ISO format
             try:
-                return datetime.fromisoformat(date_val)
+                return datetime.fromisoformat(date_val.replace('Z', '+00:00'))
             except ValueError:
                 pass
         
         return now
 
-    def rank_search_results(self, items: List[Dict[str, Any]], search_term: str) -> List[Dict[str, Any]]:
-        """
-        Search and rank items by combined recency and match quality.
-        
-        Ranking formula:
-            score = (0.7 × recency) + (0.3 × quality)
+    def _calculate_recency_score(self, item_time: datetime, is_master: bool) -> float:
+        """Calculate recency score using exponential decay.
         
         Args:
-            items: List of items to search (each item is a dict with 'content' key)
+            item_time: When the item was copied/modified
+            is_master: True for master items (slower decay)
+            
+        Returns:
+            Score from 0.0 (old) to 1.0 (recent)
+        """
+        now = datetime.now()
+        time_diff = (now - item_time).total_seconds()
+        
+        # Don't allow negative time differences
+        if time_diff < 0:
+            time_diff = 0
+        
+        decay_period = self.MASTER_DECAY_SECONDS if is_master else self.CLIPBOARD_DECAY_SECONDS
+        
+        # Exponential decay: e^(-t/T)
+        return math.exp(-time_diff / decay_period)
+
+    def rank_search_results(
+        self, 
+        items: List[Dict[str, Any]], 
+        search_term: str
+    ) -> List[Dict[str, Any]]:
+        """Search and rank items by combined recency and match quality.
+        
+        Ranking formula:
+            score = (recency_weight × recency) + (quality_weight × quality)
+        
+        Args:
+            items: List of items to search (each has 'content' key)
             search_term: Search query
             
         Returns:
             List of matching items sorted by score (highest first)
             Each item includes 'search_score', 'match_quality', 'recency_score'
         """
-        now = datetime.now()
-        scored_items = []
+        scored_items: List[Tuple[Dict[str, Any], float]] = []
         
         for item in items:
             content = item.get('content', '')
+            if not content:
+                continue
             
             # Test if this item matches the search
             is_match, quality = self.fuzzy_left_to_right_match(search_term, content)
             
             if not is_match:
-                # Skip items that don't match
                 continue
             
-            # Calculate recency score using exponential decay
-            # Master items decay slower (7 days) than clipboard items (24 hours)
-            master_modified = item.get('master_modified')
-            last_copied_at = item.get('last_copied_at')
+            # Determine if this is a master item
+            is_master = item.get('master_file_id') is not None or item.get('master_modified') is not None
             
-            if master_modified:
-                # Master item
-                item_time = self._parse_datetime(master_modified)
-                decay_period = self.master_decay_seconds
+            # Get the relevant timestamp
+            if is_master:
+                item_time = self._parse_datetime(item.get('master_modified'))
             else:
-                # Clipboard item
-                item_time = self._parse_datetime(last_copied_at)
-                decay_period = self.clipboard_decay_seconds
+                item_time = self._parse_datetime(item.get('last_copied_at'))
             
-            # Calculate time difference
-            time_diff = (now - item_time).total_seconds()
+            # Calculate recency score
+            recency = self._calculate_recency_score(item_time, is_master)
             
-            # Exponential decay: e^(-t/T)
-            # Recent items → score near 1.0
-            # Old items → score near 0.0
-            recency = math.exp(-time_diff / decay_period)
-            
-            # Combine scores with weighted formula
+            # Calculate combined score
             score = (self.recency_weight * recency) + (self.quality_weight * quality)
             
             # Add scoring metadata to item
@@ -152,19 +223,23 @@ class FuzzySearchEngine:
             
             scored_items.append((item_with_score, score))
         
-        # Sort by score descending (highest scores first)
-        sorted_items = sorted(scored_items, key=lambda x: x[1], reverse=True)
+        # Sort by score descending
+        scored_items.sort(key=lambda x: x[1], reverse=True)
         
-        return [item for item, score in sorted_items]
+        return [item for item, _ in scored_items]
 
-    def search(self, items: List[Dict[str, Any]], search_term: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
-        """
-        Search items and return ranked results with optional limit.
+    def search(
+        self, 
+        items: List[Dict[str, Any]], 
+        search_term: str, 
+        limit: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        """Search items and return ranked results with optional limit.
         
         Args:
             items: List of items to search
             search_term: Search query
-            limit: Maximum number of results to return (None = all)
+            limit: Maximum number of results (None = all)
             
         Returns:
             Ranked list of matching items
@@ -177,20 +252,28 @@ class FuzzySearchEngine:
         return results
 
     def get_time_ago_string(self, date_val: Any) -> str:
-        """
-        Convert timestamp to human-readable 'time ago' format.
+        """Convert timestamp to human-readable 'time ago' format.
         
-        Examples:
-            "Just now", "5 mins ago", "2 hours ago", 
-            "Yesterday", "3 days ago", "2 weeks ago", "Jan 15, 2024"
+        Examples: "Just now", "5 mins ago", "2 hours ago", 
+                  "Yesterday", "3 days ago", "2 weeks ago", "Jan 15, 2024"
+        
+        Args:
+            date_val: Timestamp to format
+            
+        Returns:
+            Human-readable relative time string
         """
         if not date_val:
             return "Unknown"
         
-        now = datetime.now()
         dt = self._parse_datetime(date_val)
+        now = datetime.now()
         
         seconds = (now - dt).total_seconds()
+        
+        # Handle future dates (clock skew)
+        if seconds < 0:
+            return "Just now"
         
         if seconds < 60:
             return "Just now"

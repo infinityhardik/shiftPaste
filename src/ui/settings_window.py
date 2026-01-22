@@ -1,300 +1,485 @@
-"""Settings window for Shift Paste configuration."""
+"""Settings window for Shift Paste configuration.
+
+Provides UI for:
+- Hotkey configuration
+- Clipboard history settings
+- Master file management
+- Startup and security options
+- Application exclusion list
+"""
 
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
+    QApplication, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QSpinBox, QComboBox, QCheckBox, QGroupBox,
-    QFileDialog, QListWidget, QListWidgetItem, QScrollArea, QWidget
+    QFileDialog, QListWidget, QListWidgetItem, QScrollArea, QWidget,
+    QMessageBox
 )
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont, QIcon, QColor
+from PySide6.QtCore import Qt, Signal, QSize
+from PySide6.QtGui import QFont
+from typing import Optional, List
+from .styles import get_settings_stylesheet
+
 
 class RemovableListItem(QWidget):
-    """Custom widget for list items with a delete button."""
-    deleted = Signal(object) # Emits data associated with item
+    """Custom widget for list items with a delete button.
+    
+    Used for master files and excluded apps lists.
+    """
+    
+    deleted = Signal(object)  # Emits the data associated with this item
 
-    def __init__(self, text, data=None, parent=None):
+    def __init__(self, text: str, data=None, parent=None):
         super().__init__(parent)
         self.data = data
+        
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(5, 2, 5, 2)
+        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(8)
         
         self.label = QLabel(text)
-        layout.addWidget(self.label)
-        layout.addStretch()
+        self.label.setStyleSheet("color: #333333;")
+        layout.addWidget(self.label, 1)
         
         self.delete_btn = QPushButton("✕")
-        self.delete_btn.setFixedSize(20, 20)
+        self.delete_btn.setFixedSize(26, 26)
         self.delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.delete_btn.setToolTip("Delete this item")
         self.delete_btn.setStyleSheet("""
             QPushButton { 
-                border: none; 
-                color: #666; 
+                border: 1px solid #d0d0d0; 
+                color: #ff4444;
                 font-weight: bold;
-                border-radius: 10px;
+                font-size: 10pt;
+                border-radius: 13px;
+                background-color: #f8f8f8;
             }
             QPushButton:hover { 
-                background-color: #ffcdd2; 
-                color: #c62828; 
+                background-color: #ff4444; 
+                color: white; 
+                border-color: #cc0000;
+            }
+            QPushButton:pressed {
+                background-color: #cc0000;
             }
         """)
-        self.delete_btn.clicked.connect(lambda: self.deleted.emit(self.data))
+        self.delete_btn.clicked.connect(self._on_delete)
         layout.addWidget(self.delete_btn)
+
+    def sizeHint(self):
+        """Provide a hint for the list item size."""
+        return QSize(200, 40)
+
+    def _on_delete(self):
+        """Handle delete button click."""
+        self.deleted.emit(self.data)
 
 
 class SettingsWindow(QDialog):
     """Settings dialog for application configuration."""
 
     settings_changed = Signal()
+    
+    # Target Window dimensions
+    WINDOW_WIDTH = 580
+    WINDOW_HEIGHT = 700
 
     def __init__(self, db, master_manager, parent=None):
-        """Initialize settings window."""
+        """Initialize settings window.
+        
+        Args:
+            db: Database instance for reading/writing settings
+            master_manager: MasterManager instance for file operations
+            parent: Parent widget
+        """
         super().__init__(parent)
         self.db = db
         self.master_manager = master_manager
+        
         self.setWindowTitle("Shift Paste Settings")
-        self.setFixedSize(500, 650)
+        
+        # Calculate safe window size based on screen
+        screen = QApplication.primaryScreen().availableGeometry()
+        width = min(self.WINDOW_WIDTH, screen.width() - 40)
+        height = min(self.WINDOW_HEIGHT, screen.height() - 80)
+        
+        self.resize(width, height)
+        self.setMinimumWidth(450)
+        self.setMinimumHeight(min(500, height))
+        
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
+        
         self._init_ui()
+        self.setStyleSheet(get_settings_stylesheet())
 
     def _init_ui(self):
-        """Initialize UI components based on technical specifications."""
+        """Initialize UI components."""
         main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
         
+        # Scrollable content area
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         
         content_widget = QWidget()
-        layout = QVBoxLayout(content_widget)
-        layout.setSpacing(15)
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setContentsMargins(16, 16, 16, 16)
+        content_layout.setSpacing(16)
 
-        # 1. Hotkey
-        hotkey_group = QGroupBox("Hotkey")
-        hk_layout = QVBoxLayout()
-        hk_sub = QHBoxLayout()
+        # Add setting groups
+        content_layout.addWidget(self._create_hotkey_group())
+        content_layout.addWidget(self._create_history_group())
+        content_layout.addWidget(self._create_masters_group())
+        content_layout.addWidget(self._create_security_group())
+        content_layout.addWidget(self._create_exclusions_group())
+        content_layout.addWidget(self._create_advanced_group())
+        
+        content_layout.addStretch()
+        
+        scroll.setWidget(content_widget)
+        main_layout.addWidget(scroll, 1)
+
+        # Button bar
+        self._create_button_bar(main_layout)
+
+    def _create_hotkey_group(self) -> QGroupBox:
+        """Create hotkey settings group."""
+        group = QGroupBox("Hotkey")
+        layout = QVBoxLayout(group)
+        layout.setSpacing(8)
+        
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Keyboard Shortcut:"))
+        
         self.hotkey_input = QLineEdit(self.db.get_setting('hotkey', 'Ctrl+Shift+V'))
-        hk_sub.addWidget(self.hotkey_input)
-        hk_sub.addWidget(QPushButton("Change"))
-        hk_layout.addLayout(hk_sub)
-        hotkey_group.setLayout(hk_layout)
-        layout.addWidget(hotkey_group)
-
-        # 2. Clipboard History
-        history_group = QGroupBox("Clipboard History")
-        hist_layout = QVBoxLayout()
+        self.hotkey_input.setPlaceholderText("e.g., Ctrl+Shift+V")
+        self.hotkey_input.setMaximumWidth(180)
+        row.addWidget(self.hotkey_input)
+        row.addStretch()
         
-        limit_layout = QHBoxLayout()
-        limit_layout.addWidget(QLabel("History Limit:"))
+        layout.addLayout(row)
+        layout.addWidget(QLabel(
+            "<i style='color:#666'>Press your desired key combination in the field above</i>"
+        ))
+        
+        return group
+
+    def _create_history_group(self) -> QGroupBox:
+        """Create clipboard history settings group."""
+        group = QGroupBox("Clipboard History")
+        layout = QVBoxLayout(group)
+        layout.setSpacing(10)
+        
+        # History limit
+        row1 = QHBoxLayout()
+        row1.addWidget(QLabel("History Limit:"))
         self.limit_combo = QComboBox()
-        self.limit_combo.addItems(["25", "50", "100", "200", "Unlimited"])
+        self.limit_combo.addItems(["25", "50", "100", "200", "500", "Unlimited"])
         self.limit_combo.setCurrentText(self.db.get_setting('history_limit', '50'))
-        limit_layout.addWidget(self.limit_combo)
-        hist_layout.addLayout(limit_layout)
-
-        prev_layout = QHBoxLayout()
-        prev_layout.addWidget(QLabel("Max Characters:"))
-        self.max_chars = QSpinBox()
-        self.max_chars.setRange(20, 200)
-        self.max_chars.setValue(int(self.db.get_setting('preview_length', 50)))
-        prev_layout.addWidget(self.max_chars)
+        self.limit_combo.setMaximumWidth(120)
+        row1.addWidget(self.limit_combo)
+        row1.addStretch()
+        layout.addLayout(row1)
         
-        prev_layout.addWidget(QLabel("Max Lines:"))
-        self.max_lines = QSpinBox()
-        self.max_lines.setRange(1, 5)
-        self.max_lines.setValue(int(self.db.get_setting('preview_max_lines', 2)))
-        prev_layout.addWidget(self.max_lines)
-        hist_layout.addLayout(prev_layout)
+        # Preview settings
+        row2 = QHBoxLayout()
+        row2.addWidget(QLabel("Preview Length:"))
+        self.max_chars = QSpinBox()
+        self.max_chars.setRange(20, 300)
+        self.max_chars.setValue(int(self.db.get_setting('preview_length', '50')))
+        self.max_chars.setSuffix(" chars")
+        self.max_chars.setMaximumWidth(100)
+        row2.addWidget(self.max_chars)
+        row2.addStretch()
+        layout.addLayout(row2)
 
+        # Formatting option
         self.cb_formatting = QCheckBox("Preserve text formatting (RTF/HTML)")
         self.cb_formatting.setChecked(self.db.get_setting('preserve_formatting', 'False') == 'True')
-        hist_layout.addWidget(self.cb_formatting)
+        layout.addWidget(self.cb_formatting)
 
-        self.cb_timestamps = QCheckBox("Show timestamps")
+        self.cb_timestamps = QCheckBox("Show timestamps in list")
         self.cb_timestamps.setChecked(self.db.get_setting('show_timestamps', 'True') == 'True')
-        hist_layout.addWidget(self.cb_timestamps)
+        layout.addWidget(self.cb_timestamps)
         
-        clear_layout = QHBoxLayout()
-        clear_layout.addWidget(QLabel("Auto-clear:"))
+        # Auto-clear
+        row3 = QHBoxLayout()
+        row3.addWidget(QLabel("Auto-clear history:"))
         self.clear_combo = QComboBox()
-        self.clear_combo.addItems(["Never", "Daily", "Weekly"])
+        self.clear_combo.addItems(["Never", "Daily", "Weekly", "Monthly"])
         self.clear_combo.setCurrentText(self.db.get_setting('auto_clear', 'Never'))
-        clear_layout.addWidget(self.clear_combo)
-        hist_layout.addLayout(clear_layout)
+        self.clear_combo.setMaximumWidth(120)
+        row3.addWidget(self.clear_combo)
+        row3.addStretch()
+        layout.addLayout(row3)
+        
+        return group
 
-        history_group.setLayout(hist_layout)
-        layout.addWidget(history_group)
-
-        # 3. Master Files
-        master_group = QGroupBox("Master Files")
-        m_layout = QVBoxLayout()
+    def _create_masters_group(self) -> QGroupBox:
+        """Create master files settings group."""
+        group = QGroupBox("Master Files")
+        layout = QVBoxLayout(group)
+        layout.setSpacing(10)
+        
         self.cb_enable_masters = QCheckBox("Enable Master Search")
         self.cb_enable_masters.setChecked(self.db.get_setting('enable_masters', 'True') == 'True')
-        m_layout.addWidget(self.cb_enable_masters)
+        layout.addWidget(self.cb_enable_masters)
+        
+        layout.addWidget(QLabel("Registered Excel files:"))
 
         self.master_list = QListWidget()
-        self.master_list.setFixedHeight(120)
-        m_layout.addWidget(self.master_list)
+        self.master_list.setFixedHeight(150)
+        self.master_list.setAlternatingRowColors(True)
+        layout.addWidget(self.master_list)
         self._load_master_files()
         
-        m_buttons = QHBoxLayout()
-        btn_add = QPushButton("+ Add Master File")
+        btn_add = QPushButton("➕ Add Excel File...")
         btn_add.clicked.connect(self._add_master_file)
-        m_buttons.addWidget(btn_add)
-        m_layout.addLayout(m_buttons)
+        layout.addWidget(btn_add)
         
-        master_group.setLayout(m_layout)
-        layout.addWidget(master_group)
+        return group
 
-        # 4. Startup & Security
-        security_group = QGroupBox("Startup & Security")
-        sec_layout = QVBoxLayout()
+    def _create_security_group(self) -> QGroupBox:
+        """Create startup and security settings group."""
+        group = QGroupBox("Startup & Security")
+        layout = QVBoxLayout(group)
+        layout.setSpacing(8)
+        
         self.cb_startup = QCheckBox("Run on system startup")
         self.cb_startup.setChecked(self.db.get_setting('run_on_startup', 'True') == 'True')
-        sec_layout.addWidget(self.cb_startup)
+        layout.addWidget(self.cb_startup)
         
-        self.cb_exclude_pass = QCheckBox("Exclude password managers")
+        self.cb_exclude_pass = QCheckBox("Ignore clipboard from password managers")
         self.cb_exclude_pass.setChecked(self.db.get_setting('exclude_password_managers', 'True') == 'True')
-        sec_layout.addWidget(self.cb_exclude_pass)
+        self.cb_exclude_pass.setToolTip(
+            "When enabled, clipboard content copied from known password managers\n"
+            "(KeePass, 1Password, Bitwarden, etc.) will not be saved to history."
+        )
+        layout.addWidget(self.cb_exclude_pass)
         
-        security_group.setLayout(sec_layout)
-        layout.addWidget(security_group)
+        return group
 
-        # 5. Application Exclusion (New Feature)
-        exclude_group = QGroupBox("Exclude Hotkey in Apps")
-        ex_layout = QVBoxLayout()
-        ex_layout.addWidget(QLabel("Ignore shortcut when these apps are active:"))
+    def _create_exclusions_group(self) -> QGroupBox:
+        """Create application exclusion settings group."""
+        group = QGroupBox("Exclude Hotkey in Applications")
+        layout = QVBoxLayout(group)
+        layout.setSpacing(10)
+        
+        layout.addWidget(QLabel("Ignore the hotkey when these apps are active:"))
+        
         self.exclude_list = QListWidget()
-        self.exclude_list.setFixedHeight(100)
-        ex_layout.addWidget(self.exclude_list)
+        self.exclude_list.setFixedHeight(120)
+        self.exclude_list.setAlternatingRowColors(True)
+        layout.addWidget(self.exclude_list)
         self._load_excluded_apps()
         
-        ex_btns = QHBoxLayout()
+        # Add app row
+        add_row = QHBoxLayout()
         self.app_input = QLineEdit()
-        self.app_input.setPlaceholderText("e.g. Photoshop.exe")
-        ex_btns.addWidget(self.app_input)
+        self.app_input.setPlaceholderText("Application name (e.g., Photoshop.exe)")
+        self.app_input.returnPressed.connect(self._add_excluded_app)
+        add_row.addWidget(self.app_input, 1)
+        
         btn_add_app = QPushButton("Add")
         btn_add_app.clicked.connect(self._add_excluded_app)
-        ex_btns.addWidget(btn_add_app)
-        ex_layout.addLayout(ex_btns)
+        add_row.addWidget(btn_add_app)
+        layout.addLayout(add_row)
         
-        exclude_group.setLayout(ex_layout)
-        layout.addWidget(exclude_group)
+        return group
 
-        # 6. Advanced
-        adv_group = QGroupBox("Advanced")
-        adv_layout = QVBoxLayout()
+    def _create_advanced_group(self) -> QGroupBox:
+        """Create advanced settings group."""
+        group = QGroupBox("Advanced")
+        layout = QVBoxLayout(group)
+        layout.setSpacing(8)
         
-        delay_layout = QHBoxLayout()
-        delay_layout.addWidget(QLabel("Search delay (ms):"))
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Search delay:"))
         self.search_delay = QSpinBox()
-        self.search_delay.setRange(0, 1000)
-        self.search_delay.setValue(int(self.db.get_setting('search_debounce_ms', 100)))
-        delay_layout.addWidget(self.search_delay)
-        adv_layout.addLayout(delay_layout)
+        self.search_delay.setRange(0, 500)
+        self.search_delay.setValue(int(self.db.get_setting('search_debounce_ms', '80')))
+        self.search_delay.setSuffix(" ms")
+        self.search_delay.setMaximumWidth(100)
+        self.search_delay.setToolTip("Delay before search executes (reduces CPU usage while typing)")
+        row.addWidget(self.search_delay)
+        row.addStretch()
+        layout.addLayout(row)
         
-        adv_group.setLayout(adv_layout)
-        layout.addWidget(adv_group)
+        return group
 
-        scroll.setWidget(content_widget)
-        main_layout.addWidget(scroll)
-
-        # Form Buttons
-        btn_layout = QHBoxLayout()
-        btn_layout.addStretch()
-        btn_save = QPushButton("Save")
+    def _create_button_bar(self, parent_layout: QVBoxLayout):
+        """Create save/cancel button bar."""
+        bar = QWidget()
+        bar.setStyleSheet("background-color: #f0f0f0; border-top: 1px solid #d0d0d0;")
+        bar.setFixedHeight(60)
+        
+        layout = QHBoxLayout(bar)
+        layout.setContentsMargins(16, 0, 16, 0)
+        layout.addStretch()
+        
+        btn_save = QPushButton("Save Changes")
         btn_save.clicked.connect(self._save_all)
-        btn_save.setStyleSheet("background-color: #0078d4; color: white; padding: 8px 20px;")
-        btn_layout.addWidget(btn_save)
+        btn_save.setStyleSheet("""
+            QPushButton {
+                background-color: #0078d4;
+                color: white;
+                padding: 10px 24px;
+                border: none;
+                border-radius: 6px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #106ebe;
+            }
+            QPushButton:pressed {
+                background-color: #005a9e;
+            }
+        """)
+        layout.addWidget(btn_save)
+        
         btn_cancel = QPushButton("Cancel")
         btn_cancel.clicked.connect(self.close)
-        btn_layout.addWidget(btn_cancel)
-        main_layout.addLayout(btn_layout)
+        btn_cancel.setStyleSheet("""
+            QPushButton {
+                padding: 10px 20px;
+            }
+        """)
+        layout.addWidget(btn_cancel)
+        
+        parent_layout.addWidget(bar)
 
     def _load_master_files(self):
+        """Load master files into the list widget."""
         self.master_list.clear()
-        cursor = self.db.conn.cursor()
-        cursor.execute("SELECT id, file_path, is_enabled FROM master_files")
-        for row in cursor.fetchall():
-            path_str = row['file_path']
-            filename = path_str.split('\\')[-1].split('/')[-1]
-            status = "Enabled" if row['is_enabled'] else "Disabled"
+        
+        try:
+            cursor = self.db.conn.cursor()
+            cursor.execute("SELECT id, file_path, is_enabled, last_error FROM master_files")
             
-            item = QListWidgetItem(self.master_list)
-            custom_widget = RemovableListItem(f"{filename} ({status})", data=row['id'])
-            custom_widget.deleted.connect(self._remove_master_file)
-            item.setSizeHint(custom_widget.sizeHint())
-            self.master_list.addItem(item)
-            self.master_list.setItemWidget(item, custom_widget)
+            for row in cursor.fetchall():
+                file_path = row['file_path']
+                filename = file_path.replace('\\', '/').split('/')[-1]
+                
+                status = "✓ Enabled" if row['is_enabled'] else "✗ Disabled"
+                if row['last_error']:
+                    status = "⚠ Error"
+                
+                item = QListWidgetItem(self.master_list)
+                widget = RemovableListItem(f"{filename}  ({status})", data=row['id'])
+                widget.deleted.connect(self._remove_master_file)
+                item.setSizeHint(widget.sizeHint())
+                self.master_list.addItem(item)
+                self.master_list.setItemWidget(item, widget)
+        except Exception as e:
+            print(f"[WARN] Could not load master files: {e}")
 
-    def _remove_master_file(self, file_id):
-        self.db.delete_master_file(file_id)
-        self._load_master_files()
-        if self.master_manager:
-            self.master_manager.refresh_watcher()
+    def _remove_master_file(self, file_id: int):
+        """Remove a master file from the database."""
+        try:
+            self.db.delete_master_file(file_id)
+            self._load_master_files()
+            if self.master_manager:
+                self.master_manager.refresh_watcher()
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Could not remove file: {e}")
 
     def _load_excluded_apps(self):
+        """Load excluded apps into the list widget."""
         self.exclude_list.clear()
-        excluded_apps = self.db.get_setting('excluded_apps', 'Excel.exe,Winword.exe').split(',')
-        for app in excluded_apps:
-            if not app.strip(): continue
+        
+        excluded_str = self.db.get_setting('excluded_apps', '')
+        if not excluded_str:
+            return
+            
+        for app in excluded_str.split(','):
+            app = app.strip()
+            if not app:
+                continue
+                
             item = QListWidgetItem(self.exclude_list)
-            custom_widget = RemovableListItem(app.strip(), data=app.strip())
-            custom_widget.deleted.connect(self._remove_excluded_app)
-            item.setSizeHint(custom_widget.sizeHint())
+            widget = RemovableListItem(app, data=app)
+            widget.deleted.connect(self._remove_excluded_app)
+            item.setSizeHint(widget.sizeHint())
             self.exclude_list.addItem(item)
-            self.exclude_list.setItemWidget(item, custom_widget)
+            self.exclude_list.setItemWidget(item, widget)
 
-    def _remove_excluded_app(self, app_name):
-        # We need to update the semicolon/comma separated string in DB or just reload from list
-        # For now, just remove from UI, save will handle the rest
+    def _remove_excluded_app(self, app_name: str):
+        """Remove an excluded app from the list."""
         for i in range(self.exclude_list.count()):
             item = self.exclude_list.item(i)
             widget = self.exclude_list.itemWidget(item)
-            if widget.data == app_name:
+            if widget and widget.data == app_name:
                 self.exclude_list.takeItem(i)
                 break
 
     def _add_master_file(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "Select Excel Master File", "", "Excel Files (*.xlsx)")
+        """Open file dialog to add a new master Excel file."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, 
+            "Select Excel Master File", 
+            "", 
+            "Excel Files (*.xlsx);;All Files (*)"
+        )
+        
         if file_path:
-            self.db.add_master_file(file_path)
-            self._load_master_files()
-            if self.master_manager:
-                self.master_manager.refresh_watcher()
-                self.master_manager.rebuild_index(file_path)
+            try:
+                self.db.add_master_file(file_path)
+                self._load_master_files()
+                
+                if self.master_manager:
+                    self.master_manager.refresh_watcher()
+                    self.master_manager.rebuild_index(file_path)
+            except Exception as e:
+                QMessageBox.warning(self, "Error", f"Could not add file: {e}")
 
     def _add_excluded_app(self):
+        """Add an app to the exclusion list."""
         app = self.app_input.text().strip()
-        if app:
-            item = QListWidgetItem(self.exclude_list)
-            custom_widget = RemovableListItem(app, data=app)
-            custom_widget.deleted.connect(self._remove_excluded_app)
-            item.setSizeHint(custom_widget.sizeHint())
-            self.exclude_list.addItem(item)
-            self.exclude_list.setItemWidget(item, custom_widget)
-            self.app_input.clear()
-
-    def _save_all(self):
-        """Persist all settings to the DB."""
-        self.db.set_setting('hotkey', self.hotkey_input.text())
-        self.db.set_setting('history_limit', self.limit_combo.currentText())
-        self.db.set_setting('preview_length', self.max_chars.value())
-        self.db.set_setting('preview_max_lines', self.max_lines.value())
-        self.db.set_setting('preserve_formatting', self.cb_formatting.isChecked())
-        self.db.set_setting('show_timestamps', self.cb_timestamps.isChecked())
-        self.db.set_setting('auto_clear', self.clear_combo.currentText())
-        self.db.set_setting('enable_masters', self.cb_enable_masters.isChecked())
-        self.db.set_setting('run_on_startup', self.cb_startup.isChecked())
-        self.db.set_setting('exclude_password_managers', self.cb_exclude_pass.isChecked())
-        self.db.set_setting('search_debounce_ms', self.search_delay.value())
+        if not app:
+            return
         
-        # Save excluded apps
-        apps = []
+        # Check for duplicates
         for i in range(self.exclude_list.count()):
             item = self.exclude_list.item(i)
             widget = self.exclude_list.itemWidget(item)
-            if widget:
-                apps.append(widget.data)
-        self.db.set_setting('excluded_apps', ','.join(apps))
+            if widget and widget.data.lower() == app.lower():
+                self.app_input.clear()
+                return  # Already exists
+        
+        item = QListWidgetItem(self.exclude_list)
+        widget = RemovableListItem(app, data=app)
+        widget.deleted.connect(self._remove_excluded_app)
+        item.setSizeHint(widget.sizeHint())
+        self.exclude_list.addItem(item)
+        self.exclude_list.setItemWidget(item, widget)
+        self.app_input.clear()
 
-        self.settings_changed.emit()
-        self.close()
+    def _save_all(self):
+        """Save all settings to the database."""
+        try:
+            self.db.set_setting('hotkey', self.hotkey_input.text().strip())
+            self.db.set_setting('history_limit', self.limit_combo.currentText())
+            self.db.set_setting('preview_length', str(self.max_chars.value()))
+            self.db.set_setting('preserve_formatting', str(self.cb_formatting.isChecked()))
+            self.db.set_setting('show_timestamps', str(self.cb_timestamps.isChecked()))
+            self.db.set_setting('auto_clear', self.clear_combo.currentText())
+            self.db.set_setting('enable_masters', str(self.cb_enable_masters.isChecked()))
+            self.db.set_setting('run_on_startup', str(self.cb_startup.isChecked()))
+            self.db.set_setting('exclude_password_managers', str(self.cb_exclude_pass.isChecked()))
+            self.db.set_setting('search_debounce_ms', str(self.search_delay.value()))
+            
+            # Collect excluded apps
+            apps = []
+            for i in range(self.exclude_list.count()):
+                item = self.exclude_list.item(i)
+                widget = self.exclude_list.itemWidget(item)
+                if widget and widget.data:
+                    apps.append(widget.data)
+            self.db.set_setting('excluded_apps', ','.join(apps))
+            
+            self.settings_changed.emit()
+            self.close()
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Could not save settings: {e}")

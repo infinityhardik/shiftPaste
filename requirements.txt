@@ -1,7 +1,24 @@
-PySide6==6.10.1
-pyperclip==1.8.2
-openpyxl==3.1.2
-pyinstaller==6.18.0
-pynput==1.7.7
-psutil==6.1.1
-pywin32==308
+# Shift Paste Dependencies
+# Python 3.10+ required
+
+# Core UI Framework
+PySide6>=6.6.0
+
+# Clipboard operations
+pyperclip>=1.8.2
+
+# Excel file reading
+openpyxl>=3.1.0
+
+# System process utilities
+psutil>=5.9.0
+
+# Keyboard input simulation
+pynput>=1.7.6
+
+# Windows-specific (required on Windows)
+pywin32>=306 ; sys_platform == "win32"
+
+# Build tools (optional, for creating executables)
+# Uncomment when building:
+# pyinstaller>=6.0.0
