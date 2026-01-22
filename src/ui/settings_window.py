@@ -6,7 +6,39 @@ from PySide6.QtWidgets import (
     QFileDialog, QListWidget, QListWidgetItem, QScrollArea, QWidget
 )
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont, QIcon
+from PySide6.QtGui import QFont, QIcon, QColor
+
+class RemovableListItem(QWidget):
+    """Custom widget for list items with a delete button."""
+    deleted = Signal(object) # Emits data associated with item
+
+    def __init__(self, text, data=None, parent=None):
+        super().__init__(parent)
+        self.data = data
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(5, 2, 5, 2)
+        
+        self.label = QLabel(text)
+        layout.addWidget(self.label)
+        layout.addStretch()
+        
+        self.delete_btn = QPushButton("✕")
+        self.delete_btn.setFixedSize(20, 20)
+        self.delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.delete_btn.setStyleSheet("""
+            QPushButton { 
+                border: none; 
+                color: #666; 
+                font-weight: bold;
+                border-radius: 10px;
+            }
+            QPushButton:hover { 
+                background-color: #ffcdd2; 
+                color: #c62828; 
+            }
+        """)
+        self.delete_btn.clicked.connect(lambda: self.deleted.emit(self.data))
+        layout.addWidget(self.delete_btn)
 
 
 class SettingsWindow(QDialog):
@@ -14,10 +46,11 @@ class SettingsWindow(QDialog):
 
     settings_changed = Signal()
 
-    def __init__(self, db, parent=None):
+    def __init__(self, db, master_manager, parent=None):
         """Initialize settings window."""
         super().__init__(parent)
         self.db = db
+        self.master_manager = master_manager
         self.setWindowTitle("Shift Paste Settings")
         self.setFixedSize(500, 650)
         self._init_ui()
@@ -98,8 +131,9 @@ class SettingsWindow(QDialog):
         m_layout.addWidget(self.cb_enable_masters)
 
         self.master_list = QListWidget()
-        self._load_master_files()
+        self.master_list.setFixedHeight(120)
         m_layout.addWidget(self.master_list)
+        self._load_master_files()
         
         m_buttons = QHBoxLayout()
         btn_add = QPushButton("+ Add Master File")
@@ -129,12 +163,10 @@ class SettingsWindow(QDialog):
         ex_layout = QVBoxLayout()
         ex_layout.addWidget(QLabel("Ignore shortcut when these apps are active:"))
         self.exclude_list = QListWidget()
-        # Initial defaults if needed or load from DB
-        excluded_apps = self.db.get_setting('excluded_apps', 'Excel.exe,Winword.exe').split(',')
-        for app in excluded_apps:
-            if app: self.exclude_list.addItem(app)
-        
+        self.exclude_list.setFixedHeight(100)
         ex_layout.addWidget(self.exclude_list)
+        self._load_excluded_apps()
+        
         ex_btns = QHBoxLayout()
         self.app_input = QLineEdit()
         self.app_input.setPlaceholderText("e.g. Photoshop.exe")
@@ -182,18 +214,63 @@ class SettingsWindow(QDialog):
         cursor = self.db.conn.cursor()
         cursor.execute("SELECT id, file_path, is_enabled FROM master_files")
         for row in cursor.fetchall():
-            self.master_list.addItem(f"{row['file_path']} ({'Enabled' if row['is_enabled'] else 'Disabled'})")
+            path_str = row['file_path']
+            filename = path_str.split('\\')[-1].split('/')[-1]
+            status = "Enabled" if row['is_enabled'] else "Disabled"
+            
+            item = QListWidgetItem(self.master_list)
+            custom_widget = RemovableListItem(f"{filename} ({status})", data=row['id'])
+            custom_widget.deleted.connect(self._remove_master_file)
+            item.setSizeHint(custom_widget.sizeHint())
+            self.master_list.addItem(item)
+            self.master_list.setItemWidget(item, custom_widget)
+
+    def _remove_master_file(self, file_id):
+        self.db.delete_master_file(file_id)
+        self._load_master_files()
+        if self.master_manager:
+            self.master_manager.refresh_watcher()
+
+    def _load_excluded_apps(self):
+        self.exclude_list.clear()
+        excluded_apps = self.db.get_setting('excluded_apps', 'Excel.exe,Winword.exe').split(',')
+        for app in excluded_apps:
+            if not app.strip(): continue
+            item = QListWidgetItem(self.exclude_list)
+            custom_widget = RemovableListItem(app.strip(), data=app.strip())
+            custom_widget.deleted.connect(self._remove_excluded_app)
+            item.setSizeHint(custom_widget.sizeHint())
+            self.exclude_list.addItem(item)
+            self.exclude_list.setItemWidget(item, custom_widget)
+
+    def _remove_excluded_app(self, app_name):
+        # We need to update the semicolon/comma separated string in DB or just reload from list
+        # For now, just remove from UI, save will handle the rest
+        for i in range(self.exclude_list.count()):
+            item = self.exclude_list.item(i)
+            widget = self.exclude_list.itemWidget(item)
+            if widget.data == app_name:
+                self.exclude_list.takeItem(i)
+                break
 
     def _add_master_file(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Select Excel Master File", "", "Excel Files (*.xlsx)")
         if file_path:
             self.db.add_master_file(file_path)
             self._load_master_files()
+            if self.master_manager:
+                self.master_manager.refresh_watcher()
+                self.master_manager.rebuild_index(file_path)
 
     def _add_excluded_app(self):
         app = self.app_input.text().strip()
         if app:
-            self.exclude_list.addItem(app)
+            item = QListWidgetItem(self.exclude_list)
+            custom_widget = RemovableListItem(app, data=app)
+            custom_widget.deleted.connect(self._remove_excluded_app)
+            item.setSizeHint(custom_widget.sizeHint())
+            self.exclude_list.addItem(item)
+            self.exclude_list.setItemWidget(item, custom_widget)
             self.app_input.clear()
 
     def _save_all(self):
@@ -213,7 +290,10 @@ class SettingsWindow(QDialog):
         # Save excluded apps
         apps = []
         for i in range(self.exclude_list.count()):
-            apps.append(self.exclude_list.item(i).text())
+            item = self.exclude_list.item(i)
+            widget = self.exclude_list.itemWidget(item)
+            if widget:
+                apps.append(widget.data)
         self.db.set_setting('excluded_apps', ','.join(apps))
 
         self.settings_changed.emit()

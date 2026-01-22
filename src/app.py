@@ -92,13 +92,23 @@ class ShiftPasteApp(QObject):
 
     def show_settings(self):
         """Open the settings modal."""
-        self.settings_window = SettingsWindow(self.db)
+        # Fix: Close main window when opening settings to avoid focus issues
+        if self.main_window.isVisible():
+            self.main_window.close()
+            
+        self.settings_window = SettingsWindow(self.db, self.master_manager)
         self.settings_window.settings_changed.connect(self._on_settings_updated)
-        self.settings_window.exec()
+        self.settings_window.show() # Use show instead of exec to ensure it comes to foreground
+        self.settings_window.raise_()
+        self.settings_window.activateWindow()
 
     def _on_clipboard_changed(self, text, is_formatted, formatted_content):
         """Handle new clipboard content detected by monitor."""
-        self.db.add_clipboard_item(text, is_formatted, formatted_content)
+        try:
+            if self.db and self.db.conn:
+                self.db.add_clipboard_item(text, is_formatted, formatted_content)
+        except Exception as e:
+            print(f"[!] Error saving clipboard item: {e}")
 
     def _on_search_changed(self, query):
         """Execute search and update UI."""
@@ -138,6 +148,7 @@ class ShiftPasteApp(QObject):
 
     def _on_settings_updated(self):
         """Refresh components after settings change."""
+        print("[*] Settings updated, refreshing components...")
         # Update hotkey
         shortcut = self.db.get_setting('hotkey', 'Ctrl+Shift+V')
         excluded_apps = [a for a in self.db.get_setting('excluded_apps', '').split(',') if a.strip()]

@@ -33,7 +33,7 @@ class ClipboardMonitor(QThread):
     """Background thread that monitors clipboard for text changes with process awareness."""
 
     # Emits (plain_text, is_formatted, formatted_content)
-    clipboard_changed = Signal(str, bool, str)
+    clipboard_changed = Signal(object, object, object)
 
     def __init__(self, poll_interval: float = 0.5):
         """Initialize clipboard monitor."""

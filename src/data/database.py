@@ -78,15 +78,6 @@ class Database:
             print(f"[!] Database initialization message: {e}")
             pass
 
-        # FTS5 virtual table for clipboard
-        cursor.execute("""
-            CREATE VIRTUAL TABLE IF NOT EXISTS clipboard_fts USING fts5(
-                content,
-                content_id UNINDEXED,
-                tokenize = 'unicode61 remove_diacritics 2'
-            )
-        """)
-
         # Master files configuration
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS master_files (
@@ -109,14 +100,6 @@ class Database:
             )
         """)
 
-        # FTS5 for master items
-        cursor.execute("""
-            CREATE VIRTUAL TABLE IF NOT EXISTS master_fts USING fts5(
-                content,
-                master_item_id UNINDEXED
-            )
-        """)
-
         # User settings
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS settings (
@@ -125,6 +108,7 @@ class Database:
             )
         """)
 
+        cursor.execute("PRAGMA foreign_keys = ON")
         self.conn.commit()
 
     def _get_hash(self, text: str) -> str:
@@ -149,12 +133,6 @@ class Database:
             """, (content, content_hash, 1 if is_formatted else 0, formatted_content, now, now))
             
             item_id = cursor.lastrowid
-
-            # Add to FTS
-            cursor.execute("""
-                INSERT INTO clipboard_fts (content, content_id)
-                VALUES (?, ?)
-            """, (content, item_id))
             
         except sqlite3.IntegrityError:
             # Duplicate hash - update existing record
@@ -197,15 +175,15 @@ class Database:
             cursor.execute("SELECT id FROM master_files WHERE file_path = ?", (file_path,))
             return cursor.fetchone()['id']
 
+    def delete_master_file(self, file_id: int):
+        """Delete a master file and its items (via cascade)."""
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM master_files WHERE id = ?", (file_id,))
+        self.conn.commit()
+
     def update_master_items(self, file_id: int, items: List[Tuple[str, int]]):
         """Rebuild items for a specific master file."""
         cursor = self.conn.cursor()
-        
-        # Clear old items for this file from FTS first
-        cursor.execute("""
-            DELETE FROM master_fts 
-            WHERE master_item_id IN (SELECT id FROM master_items WHERE master_file_id = ?)
-        """, (file_id,))
         
         # Clear from cache table
         cursor.execute("DELETE FROM master_items WHERE master_file_id = ?", (file_id,))
@@ -216,13 +194,6 @@ class Database:
                 INSERT INTO master_items (master_file_id, content, row_number)
                 VALUES (?, ?, ?)
             """, (file_id, content, row_num))
-            
-            item_id = cursor.lastrowid
-            
-            cursor.execute("""
-                INSERT INTO master_fts (content, master_item_id)
-                VALUES (?, ?)
-            """, (content, item_id))
 
         cursor.execute("UPDATE master_files SET last_modified = ? WHERE id = ?", (datetime.now(), file_id))
         self.conn.commit()
@@ -250,11 +221,8 @@ class Database:
         return [dict(row) for row in cursor.fetchall()]
 
     def search_clipboard(self, query: str, limit: int = 50) -> List[Dict[str, Any]]:
-        """Search clipboard items using FTS5."""
+        """Search clipboard items. Using loose search to let Python engine rank."""
         cursor = self.conn.cursor()
-        # unicode61 remove_diacritics 2 tokenizer handles fuzzy/substring needs better than basic porter
-        # But we'll use the fuzzy_left_to_right_match for ranking later.
-        # Here we just get a broad set of candidates.
         
         if not query.strip():
             cursor.execute("""
@@ -262,18 +230,20 @@ class Database:
                 ORDER BY last_copied_at DESC LIMIT ?
             """, (limit,))
         else:
-            # simple FTS5 query
+            # Broad search: any item containing characters from query
+            # We'll fetch more than requested to give the fuzzy engine more candidates
+            search_query = f"%{query.replace(' ', '%')}%"
             cursor.execute("""
-                SELECT ci.* FROM clipboard_items ci
-                JOIN clipboard_fts cf ON ci.id = cf.content_id
-                WHERE clipboard_fts MATCH ?
+                SELECT * FROM clipboard_items 
+                WHERE content LIKE ? 
+                ORDER BY last_copied_at DESC 
                 LIMIT ?
-            """, (f'"{query}"*', limit))
+            """, (search_query, limit * 2))
             
         return [dict(row) for row in cursor.fetchall()]
 
     def search_masters(self, query: str, limit: int = 50) -> List[Dict[str, Any]]:
-        """Search master items using FTS5."""
+        """Search master items. Using loose search to let Python engine rank."""
         cursor = self.conn.cursor()
         
         if not query.strip():
@@ -285,28 +255,26 @@ class Database:
                 LIMIT ?
             """, (limit,))
         else:
+            search_query = f"%{query.replace(' ', '%')}%"
             cursor.execute("""
                 SELECT mi.*, mf.file_path, mf.last_modified as master_modified 
                 FROM master_items mi
                 JOIN master_files mf ON mi.master_file_id = mf.id
-                JOIN master_fts mfts ON mi.id = mfts.master_item_id
-                WHERE mf.is_enabled = 1 AND master_fts MATCH ?
+                WHERE mf.is_enabled = 1 AND mi.content LIKE ?
                 LIMIT ?
-            """, (f'"{query}"*', limit))
+            """, (search_query, limit * 2))
             
         return [dict(row) for row in cursor.fetchall()]
 
     def delete_clipboard_item(self, item_id: int):
-        """Delete clipboard item and its FTS entry."""
+        """Delete clipboard item."""
         cursor = self.conn.cursor()
-        cursor.execute("DELETE FROM clipboard_fts WHERE content_id = ?", (item_id,))
         cursor.execute("DELETE FROM clipboard_items WHERE id = ?", (item_id,))
         self.conn.commit()
 
     def clear_clipboard_history(self):
         """Clear all clipboard history."""
         cursor = self.conn.cursor()
-        cursor.execute("DELETE FROM clipboard_fts")
         cursor.execute("DELETE FROM clipboard_items")
         self.conn.commit()
 

@@ -15,16 +15,16 @@ except ImportError as e:
 def get_active_process_name() -> str:
     """Get the name of the currently focused process."""
     system = platform.system()
-    try:
-        if system == "Windows":
+    if system == "Windows":
+        try:
             hwnd = win32gui.GetForegroundWindow()
+            if not hwnd: return ""
             _, pid = win32process.GetWindowThreadProcessId(hwnd)
             process = psutil.Process(pid)
             return process.name()
-        # macOS/Linux would need additional dependencies or applescript
-        return ""
-    except Exception:
-        return ""
+        except (psutil.NoSuchProcess, psutil.AccessDenied, Exception):
+            return ""
+    return ""
 
 def is_app_excluded(excluded_list: list) -> bool:
     """Check if the currently active app is in the excluded list."""

@@ -2,7 +2,7 @@
 
 from PySide6.QtWidgets import QSystemTrayIcon, QMenu
 from PySide6.QtGui import QIcon, QAction
-from PySide6.QtCore import Signal, QObject
+from PySide6.QtCore import Signal, QObject, Qt
 
 class SystemTrayManager(QObject):
     """Manages the system tray icon and its context menu."""
@@ -23,7 +23,7 @@ class SystemTrayManager(QObject):
             pixmap.fill(Qt.GlobalColor.transparent)
             painter = QPainter(pixmap)
             painter.setBrush(QColor("#2196F3"))
-            painter.setPen(Qt.GlobalColor.transparent)
+            painter.setPen(Qt.PenStyle.NoPen)
             painter.drawEllipse(2, 2, 28, 28)
             painter.end()
             icon = QIcon(pixmap)

@@ -27,16 +27,12 @@ class HotkeyManager(QObject):
         self.is_listening = False
         self._thread = None
         self._hotkey_id = 1
+        self._lock = threading.Lock()
         
         # Mapping for RegisterHotKey
         self.vk_map = {
-            'v': 0x56,
-            'z': 0x5A,
-            'x': 0x58,
-            'c': 0x43,
-            'backspace': 0x08,
-            'enter': 0x0D,
-            'space': 0x20,
+            'v': 0x56, 'z': 0x5A, 'x': 0x58, 'c': 0x43,
+            'backspace': 0x08, 'enter': 0x0D, 'space': 0x20,
         }
 
     def _parse_shortcut(self, shortcut: str):
@@ -59,41 +55,50 @@ class HotkeyManager(QObject):
 
     def start(self):
         """Start the hotkey listener thread."""
-        if not self.is_listening:
-            self.is_listening = True
-            self._thread = threading.Thread(target=self._run_listener, daemon=True)
-            self._thread.start()
-            print(f"[*] Hotkey manager started for: {self.shortcut_str}")
+        with self._lock:
+            if not self.is_listening:
+                self.is_listening = True
+                self._thread = threading.Thread(target=self._run_listener, daemon=True)
+                self._thread.start()
+                print(f"[*] Hotkey manager started for: {self.shortcut_str}")
 
     def _run_listener(self):
         """Native message loop for global hotkeys."""
-        modifiers, vk = self._parse_shortcut(self.shortcut_str)
-        
-        # Register the hotkey
-        if not ctypes.windll.user32.RegisterHotKey(None, self._hotkey_id, modifiers, vk):
-            print(f"[!] Failed to register hotkey {self.shortcut_str}. Error: {ctypes.GetLastError()}")
-            self.is_listening = False
-            return
-
         try:
+            modifiers, vk = self._parse_shortcut(self.shortcut_str)
+            
+            # Register the hotkey
+            if not ctypes.windll.user32.RegisterHotKey(None, self._hotkey_id, modifiers, vk):
+                print(f"[!] Failed to register hotkey {self.shortcut_str}. Error: {ctypes.GetLastError()}")
+                self.is_listening = False
+                return
+
             msg = wintypes.MSG()
             while self.is_listening:
                 if ctypes.windll.user32.GetMessageW(ctypes.byref(msg), None, 0, 0) != 0:
                     if msg.message == WM_HOTKEY:
-                        if not is_app_excluded(self.excluded_apps):
-                            # print(f"[*] Hotkey triggered: {self.shortcut_str}")
-                            self.triggered.emit()
+                        try:
+                            if not is_app_excluded(self.excluded_apps):
+                                self.triggered.emit()
+                        except Exception as e:
+                            print(f"Error checking excluded apps: {e}")
                     ctypes.windll.user32.TranslateMessage(ctypes.byref(msg))
                     ctypes.windll.user32.DispatchMessageW(ctypes.byref(msg))
+        except Exception as e:
+            print(f"Hotkey thread error: {e}")
         finally:
             ctypes.windll.user32.UnregisterHotKey(None, self._hotkey_id)
+            self.is_listening = False
 
     def stop(self):
-        """Stop the listener."""
-        self.is_listening = False
-        # To break the GetMessage loop, we send a dummy message
-        if self._thread and self._thread.is_alive():
-            ctypes.windll.user32.PostThreadMessageW(self._thread.ident, 0, 0, 0)
+        """Stop the listener and wait for thread to exit."""
+        with self._lock:
+            if self.is_listening:
+                self.is_listening = False
+                if self._thread and self._thread.is_alive():
+                    # Post a dummy message to break GetMessage
+                    ctypes.windll.user32.PostThreadMessageW(self._thread.ident, 0, 0, 0)
+                    self._thread.join(timeout=1.0)
 
     def update_settings(self, new_shortcut: str, new_excluded_apps: List[str]):
         """Update settings and restart listener."""
