@@ -230,9 +230,10 @@ class Database:
                 ORDER BY last_copied_at DESC LIMIT ?
             """, (limit,))
         else:
-            # Broad search: any item containing characters from query
-            # We'll fetch more than requested to give the fuzzy engine more candidates
-            search_query = f"%{query.replace(' ', '%')}%"
+            # Broad search: find items that contain characters in sequence
+            # We insert % between every character to be as inclusive as possible
+            clean_query = query.replace(' ', '')
+            search_query = "%" + "%".join(list(clean_query)) + "%"
             cursor.execute("""
                 SELECT * FROM clipboard_items 
                 WHERE content LIKE ? 
@@ -255,7 +256,8 @@ class Database:
                 LIMIT ?
             """, (limit,))
         else:
-            search_query = f"%{query.replace(' ', '%')}%"
+            clean_query = query.replace(' ', '')
+            search_query = "%" + "%".join(list(clean_query)) + "%"
             cursor.execute("""
                 SELECT mi.*, mf.file_path, mf.last_modified as master_modified 
                 FROM master_items mi

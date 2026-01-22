@@ -59,8 +59,10 @@ class FuzzySearchEngine:
         quality = len(search_chars) / span
         
         # Exact substring bonus
-        if search_chars in text_lower.replace(' ', ''):
-            quality = min(1.0, quality * 1.2)
+        # Treat the text as if spaces didn't exist for the purpose of exact match bonus
+        text_no_spaces = text_lower.replace(' ', '')
+        if search_chars in text_no_spaces:
+            quality = min(1.0, quality * 1.5) # Increased bonus for consecutive matches
             
         return True, quality
 

@@ -1,189 +1,84 @@
 # Shift Paste
 
-**Shift Paste** is an open-source, cross-platform clipboard manager that enhances the native clipboard experience with powerful fuzzy search capabilities and persistent master files. It feels identical to Windows 10 Clipboard History but adds intelligent search and Excel-based organization.
+**Shift Paste** is a high-performance, cross-platform clipboard manager that enhances your productivity with precise fuzzy search and persistent Excel-based collections. It provides a premium, Windows-native feel with intelligent ranking and effortless organization.
 
-## Features
+## Key Features
 
-✨ **Clipboard History** - Automatically stores your clipboard items
-🔍 **Fuzzy Search** - Intelligent left-to-right character matching
-📁 **Master Files** - Persistent Excel-based collections (Pinned, Work, Personal)
-⚡ **Instant Access** - Global hotkey (Ctrl+Shift+V) for quick access
-🎯 **Ranking** - Results ranked by match quality and recency
-💾 **Local Storage** - SQLite database with full-text search
-🌍 **Cross-Platform** - Works on Windows, macOS, and Linux
+✨ **Clipboard History** - Automatically stores your clipboard history with optional text formatting preservation.
+🔍 **Sequential Search** - Advanced left-to-right character matching (e.g., search "1884" for "18 mm 8 x 4").
+📁 **Master Files** - Keep your frequently used snippets in Excel files; they are automatically synced and ready to search.
+⚡ **Instant Access** - Global hotkey (Ctrl+Shift+V) to launch instantly. The UI closes automatically when you paste or lose focus.
+🎯 **Smart Ranking** - Results are ranked by a combination of recency and match quality. Consecutive character matches are prioritized.
+💾 **Robust Storage** - All history and settings are stored in a lightweight SQLite database (`data/clipboard.db`).
+🚫 **App Exclusion** - Disable the hotkey in specific apps (like Photoshop or Excel) to avoid shortcut conflicts.
 
 ## Quick Start
 
 ### Requirements
+- Python 3.10+
+- Dependencies: `PySide6`, `pyperclip`, `openpyxl`, `pynput`, `psutil`, `pywin32`
 
-- Python 3.10 or higher
-- PySide6, pyperclip, keyboard, openpyxl, pandas, watchdog, pyautogui
-
-### Installation
-
-1. **Clone or download** the repository
+### Installation & Usage
+1. **Clone** the repository.
 2. **Install dependencies**:
    ```bash
    pip install -r requirements.txt
    ```
-
 3. **Run the application**:
    ```bash
    python main.py
    ```
+4. **Hotkey**: Press `Ctrl+Shift+V` to open the search bar. Use arrow keys or type to find an item, then press **Enter** to paste it directly into your active window.
 
-The app will start in the system tray. Press **Ctrl+Shift+V** to open the clipboard manager.
+## Search Logic
 
-## Usage
+Shift Paste uses a precise **Left-to-Right Sequential Matching** algorithm:
+- It finds every character of your search term in the text, in the order they appear.
+- Spaces in your search term are ignored to allow one-string matching.
+- **Example**: Search "ro" or "LP" or "1884" to find `18 mm 8 x 4 LL Pro`.
+- **Ranking**: A "Match Quality" score is calculated based on the span of the match. Consecutive characters (like "Pro") rank higher than scattered ones (like "1884").
 
-### Opening Shift Paste
+## Maintenance & Configuration
 
-- Press `Ctrl+Shift+V` (Windows)
-- Press `Shift+Cmd+V` (macOS)
-- Press `Shift+Super+V` (Linux)
+### Data Registry
+- **Database**: `data/clipboard.db` stores your history, master items, and settings.
+- **Master Files**: Store your Excel sheets in `data/Master/`. Any files added here are automatically scanned and indexed on startup.
+- **Polling**: The app polls for changes in your Excel files every 1 second (using modification time), so edits are available almost instantly.
 
-### Finding Items
-
-1. Type to search
-2. Results update in real-time
-3. Press **Enter** or **double-click** to paste
-4. Press **Delete** to remove a clipboard item
-5. Press **Esc** to close
-
-### Master Files
-
-Master files are Excel spreadsheets stored in `data/Master/`:
-
-- **Pinned.xlsx** - Frequently used items
-- **Work.xlsx** - Work-related templates/snippets
-- **Personal.xlsx** - Personal snippets
-
-Edit these files directly, and the app will reload them automatically.
-
-## Configuration
-
-Settings are stored in `config.json`:
-
-```json
-{
-  "clipboard": {
-    "max_items": 20,
-    "preview_chars": 100
-  },
-  "shortcuts": {
-    "windows": "ctrl+shift+v",
-    "macos": "shift+cmd+v",
-    "linux": "shift+super+v"
-  },
-  "master_file": {
-    "directory": "data/Master",
-    "auto_reload": true
-  },
-  "ui": {
-    "theme": "system",
-    "max_visible_items": 8
-  },
-  "startup": {
-    "run_on_boot": false
-  }
-}
-```
+### Settings
+Settings are managed entirely via the **Settings Window** in the app. No manual JSON editing is required.
+1. Right-click the system tray icon and select **Settings**, or use the gear icon in the search window.
+2. You can configure:
+   - **Hotkey**: Custom shortcut registration.
+   - **History Limit**: Max items to keep in history.
+   - **Exclusions**: Add/Remove apps where the hotkey should be disabled.
+   - **Master Files**: Manage which Excel sheets are actively searched.
 
 ## Architecture
 
-```
-src/
-├── app.py              # Main application controller
-├── ui/
-│   ├── main_window.py      # Main popup window
-│   ├── settings_window.py  # Settings dialog
-│   └── styles.py           # QSS stylesheets
-├── core/
-│   ├── clipboard_monitor.py # Clipboard change detection
-│   ├── search_engine.py    # Fuzzy search algorithm
-│   └── hotkey_manager.py   # Global hotkey handling
-├── data/
-│   ├── database.py         # SQLite operations
-│   ├── excel_manager.py    # Excel file handling
-│   └── config_manager.py   # Configuration management
-└── utils/
-    └── platform_utils.py   # OS-specific utilities
-```
-
-## Fuzzy Search Algorithm
-
-Shift Paste uses left-to-right character matching:
-
-**Valid searches:**
-- `MARLEX A Grade` → "MARLEX A Grade 100%" ✓
-- `mrlx` → M-A-R-L-EX ✓
-- `door` → "...Flush Door" ✓
-
-**Invalid searches:**
-- `xml` → "No left-to-right match" ✗
-- `door marlex` → "Wrong order" ✗
-
-Results are ranked by:
-1. **Match quality** (60%) - Consecutive characters, word boundaries
-2. **Recency** (40%) - Newer items ranked higher
-3. **Master boost** (1.1x) - Master items get priority
-
-## Database
-
-SQLite database with:
-- `clipboard_items` - Recent clipboard history
-- `master_items` - Persistent master items
-- `search_index` - FTS5 full-text search index
-
-## Building Executable
-
-Create a standalone executable using PyInstaller:
-
-```bash
-pyinstaller build.spec --clean
-```
-
-Output:
-- Windows: `ShiftPaste.exe` (~60MB)
-- macOS: `ShiftPaste.app` (~65MB)
-- Linux: `ShiftPaste` (~60MB)
+The project has been simplified for maximum performance:
+- `src/app.py`: Main application controller and logic.
+- `src/core/search_engine.py`: The sequential fuzzy search implementation.
+- `src/core/master.py`: Handles Excel indexing and modification polling.
+- `src/core/clipboard_monitor.py`: Background thread detecting clipboard changes.
+- `src/utils/hotkey.py`: Native Windows API integration for global hotkeys.
+- `src/data/database.py`: All storage, settings, and search filtering.
 
 ## Troubleshooting
 
-### Hotkey not working
-- Check if another app is using the same hotkey
-- Change hotkey in Settings
-- Ensure application has administrator privileges (Windows)
+- **Hotkey Fails**: Ensure no other application (like Windows Clipboard) is hogging `Ctrl+Shift+V`. You can change the hotkey in the settings.
+- **Excel Not Updating**: Ensure your Excel file is in `.xlsx` format and stored in the `data/Master` folder.
+- **App Won't Open**: Check the terminal output. On Windows, ensure `pywin32` and `psutil` are correctly installed.
 
-### Items not appearing
-- Check clipboard is working (Ctrl+C some text)
-- Verify `data/clipboard.db` exists
-- Clear history and try again
+## Building Executable
 
-### Excel files not syncing
-- Ensure files are in `data/Master/` directory
-- Check file has proper headers: Content, Timestamp, Notes
-- Verify auto-reload is enabled in Settings
+You can package Shift Paste into a single `.exe` file using PyInstaller:
 
-## License
+1. Install PyInstaller: `pip install pyinstaller`
+2. Run the build: `pyinstaller build.spec --clean`
+3. Find your app in `dist/ShiftPaste.exe`
 
-MIT License - See LICENSE file for details
-
-## Contributing
-
-Contributions are welcome! Please:
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
-
-## Support
-
-For issues or questions:
-1. Check existing GitHub issues
-2. Create a new issue with details
-3. Include steps to reproduce
+For detailed distribution instructions, see [HOW_TO_BUILD.md](file:///c:/Users/Hardik%20Bhaavani/Desktop/shiftPaste/HOW_TO_BUILD.md).
 
 ---
-
-**Built with ❤️ for productivity**
+**Built for power users who need speed and precision.**
