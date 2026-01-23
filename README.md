@@ -10,6 +10,15 @@ Shift Paste enhances your productivity with intelligent clipboard history, preci
 
 ---
 
+## 📥 Downloads
+
+Get the latest version of Shift Paste for Windows:
+
+* 🚀 **[Download ShiftPaste.exe (Standalone)](dist/ShiftPaste.exe)** - No installation required. Just download and run.
+* 📦 **[Download ShiftPaste_Setup.exe (Windows Installer)](dist/ShiftPaste_Setup.exe)** - Recommended for a full installation with desktop shortcuts.
+
+---
+
 ## ✨ Key Features
 
 | Feature | Description |
