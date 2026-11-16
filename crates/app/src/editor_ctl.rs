@@ -335,6 +335,7 @@ fn wire(app: &Rc<App>) {
             app.save_settings();
         })
     });
+    w.on_open_paste_permission(platform::permissions::open_paste_settings);
     w.on_handle_key(|key, ctrl, shift, _alt| {
         let mut handled = false;
         with_ed(|app, ed| handled = ed.key(app, &key, ctrl, shift));
@@ -353,6 +354,8 @@ fn wire(app: &Rc<App>) {
 
 impl EditorCtl {
     fn refresh_all(&self, app: &App) {
+        self.window
+            .set_paste_permission_missing(!platform::permissions::can_paste());
         self.refresh_collections(app);
         self.refresh_items(app, true);
         self.refresh_undo(app);

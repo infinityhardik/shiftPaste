@@ -279,6 +279,8 @@ export component EditorWindow inherits Window {
     in property <string> toast-text;
     in property <string> toast-action;
     in property <bool> first-run;
+    // macOS: the Accessibility permission (needed to paste for you) is missing.
+    in property <bool> paste-permission-missing;
     in property <[string]> hotkey-caps: ["Ctrl", "⇧", "V"];
 
     // ---- drag state (list rows)
@@ -313,6 +315,7 @@ export component EditorWindow inherits Window {
     callback confirm-done(bool);
     callback toast-clicked();
     callback welcome-done();
+    callback open-paste-permission();
     callback handle-key(string, bool, bool, bool) -> bool;
 
     FocusScope {
@@ -384,6 +387,28 @@ export component EditorWindow inherits Window {
                 }
             }
             Divider { }
+
+            if root.paste-permission-missing: Rectangle {
+                height: 44px;
+                background: Theme.warning-soft;
+                HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 12px;
+                    spacing: 10px;
+                    Icon { y: (parent.height - self.height) / 2; source: Icons.shield; size: 16px; tint: Theme.star; }
+                    Text {
+                        text: "Allow Shift Paste to paste for you: macOS needs the Accessibility permission. Until then, items are copied and you press ⌘V.";
+                        color: Theme.text-muted;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                        overflow: elide;
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        Button { text: "Open Settings"; primary: true; compact: true; clicked => { root.open-paste-permission(); } }
+                    }
+                }
+            }
 
             HorizontalLayout {
                 vertical-stretch: 1;

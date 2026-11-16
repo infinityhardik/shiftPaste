@@ -94,6 +94,8 @@ fn main() {
         None if first_run || app.notice.borrow().is_some() => editor_ctl::open_editor(&app, None),
         None => {}
     }
+    // macOS: become a menu-bar app once the event loop is running.
+    slint::Timer::single_shot(std::time::Duration::ZERO, platform::prepare_running_app);
     if let Err(e) = slint::run_event_loop_until_quit() {
         tracing::error!("event loop ended with an error: {e}");
     }

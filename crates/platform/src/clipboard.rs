@@ -79,8 +79,83 @@ pub fn is_concealed() -> bool {
     }
     #[cfg(not(any(windows, target_os = "macos")))]
     {
-        false
+        // KeePassXC and others mark secrets with this target.
+        const HINT: &str = "x-kde-passwordManagerHint";
+        if crate::is_wayland() {
+            use wl_clipboard_rs::paste::{get_mime_types, ClipboardType, Seat};
+            get_mime_types(ClipboardType::Regular, Seat::Unspecified)
+                .is_ok_and(|m| m.contains(HINT))
+        } else {
+            x11_targets_contain(HINT).unwrap_or(false)
+        }
     }
+}
+
+/// Ask the X11 clipboard owner for its TARGETS and look for `name`.
+#[cfg(not(any(windows, target_os = "macos")))]
+fn x11_targets_contain(name: &str) -> Option<bool> {
+    use std::time::{Duration, Instant};
+    use x11rb::connection::Connection;
+    use x11rb::protocol::xproto::{AtomEnum, ConnectionExt, CreateWindowAux, WindowClass};
+    use x11rb::protocol::Event;
+
+    let (conn, screen) = x11rb::connect(None).ok()?;
+    let root = conn.setup().roots.get(screen)?.root;
+    let win = conn.generate_id().ok()?;
+    conn.create_window(
+        0,
+        win,
+        root,
+        0,
+        0,
+        1,
+        1,
+        0,
+        WindowClass::INPUT_ONLY,
+        0,
+        &CreateWindowAux::new(),
+    )
+    .ok()?;
+    let atom = |n: &[u8]| {
+        conn.intern_atom(false, n)
+            .ok()?
+            .reply()
+            .ok()
+            .map(|r| r.atom)
+    };
+    let (clipboard, targets, prop, wanted) = (
+        atom(b"CLIPBOARD")?,
+        atom(b"TARGETS")?,
+        atom(b"SHIFTPASTE_TARGETS")?,
+        atom(name.as_bytes())?,
+    );
+    conn.convert_selection(win, clipboard, targets, prop, x11rb::CURRENT_TIME)
+        .ok()?;
+    conn.flush().ok()?;
+    let deadline = Instant::now() + Duration::from_millis(200);
+    let found = loop {
+        match conn.poll_for_event().ok()? {
+            Some(Event::SelectionNotify(e)) if e.requestor == win => {
+                if e.property == x11rb::NONE {
+                    break false;
+                }
+                let reply = conn
+                    .get_property(true, win, prop, AtomEnum::ATOM, 0, 4096)
+                    .ok()?
+                    .reply()
+                    .ok()?;
+                break reply
+                    .value32()
+                    .is_some_and(|mut atoms| atoms.any(|a| a == wanted));
+            }
+            Some(_) => continue,
+            None if Instant::now() > deadline => break false,
+            None => std::thread::sleep(Duration::from_millis(5)),
+        }
+    };
+    let _ = conn.destroy_window(win);
+    let _ = conn.flush();
+    Some(found)
 }
 
 /// Background thread that reports clipboard changes.

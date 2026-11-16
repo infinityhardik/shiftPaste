@@ -235,6 +235,8 @@ export component PopupWindow inherits Window {
     in property <string> empty-message: "Copy some text and it will show up here.";
     in property <bool> preview-open;
     in property <length> preview-width: 380px;
+    // Which edges can be dragged to resize (macOS: only right/bottom/corner).
+    in property <bool> resize-all-edges: true;
     in property <string> preview-kind;
     in property <string> preview-title;
     in property <string> preview-body;
@@ -259,6 +261,10 @@ export component PopupWindow inherits Window {
     callback resume-recording();
     callback toast-clicked();
     callback focus-lost();
+    // Resizing from an edge: 0 N, 1 S, 2 E, 3 W, 4 NE, 5 NW, 6 SE, 7 SW.
+    callback resize-start(int);
+    callback resize-move();
+    callback resize-end();
 
     public function focus-search() {
         search-input.focus();
@@ -539,6 +545,37 @@ export component PopupWindow inherits Window {
                         }
                     }
                 }
+            }
+
+            // ------------------------------------------------- resize grips
+            for g in [
+                { dir: 0, x: 8px, y: 0px, w: root.width - 16px, h: 5px, all: true },
+                { dir: 1, x: 8px, y: root.height - 5px, w: root.width - 16px, h: 5px, all: false },
+                { dir: 2, x: root.width - 5px, y: 8px, w: 5px, h: root.height - 16px, all: false },
+                { dir: 3, x: 0px, y: 8px, w: 5px, h: root.height - 16px, all: true },
+                { dir: 4, x: root.width - 10px, y: 0px, w: 10px, h: 10px, all: true },
+                { dir: 5, x: 0px, y: 0px, w: 10px, h: 10px, all: true },
+                { dir: 6, x: root.width - 12px, y: root.height - 12px, w: 12px, h: 12px, all: false },
+                { dir: 7, x: 0px, y: root.height - 10px, w: 10px, h: 10px, all: true },
+            ]: TouchArea {
+                x: g.x;
+                y: g.y;
+                width: g.w;
+                height: g.h;
+                enabled: root.resize-all-edges || !g.all;
+                mouse-cursor: g.dir <= 1 ? MouseCursor.ns-resize
+                    : g.dir <= 3 ? MouseCursor.ew-resize
+                    : (g.dir == 4 || g.dir == 7) ? MouseCursor.nesw-resize
+                    : MouseCursor.nwse-resize;
+                pointer-event(e) => {
+                    if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+                        root.resize-start(g.dir);
+                    }
+                    if (e.kind == PointerEventKind.up) {
+                        root.resize-end();
+                    }
+                }
+                moved => { root.resize-move(); }
             }
 
             if root.toast-text != "": Toast {

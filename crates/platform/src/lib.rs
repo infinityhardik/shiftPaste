@@ -12,8 +12,11 @@ pub mod foreground;
 pub mod hotkey;
 pub mod input;
 pub mod instance;
+pub mod permissions;
 pub mod shell;
 pub mod tray;
+#[cfg(target_os = "linux")]
+pub mod wayland_shortcut;
 pub mod window;
 
 #[derive(Debug, thiserror::Error)]
@@ -44,5 +47,19 @@ pub fn prepare_process() {
     if std::env::var_os("GDK_GL").is_none() {
         // Single-threaded at this point, so changing the environment is safe.
         std::env::set_var("GDK_GL", "disable");
+    }
+}
+
+/// Call once the event loop is running. macOS: run as a menu-bar app
+/// (no Dock icon). Bundled builds set `LSUIElement` so there's no flash.
+pub fn prepare_running_app() {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2::MainThreadMarker;
+        use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
+        if let Some(mtm) = MainThreadMarker::new() {
+            NSApplication::sharedApplication(mtm)
+                .setActivationPolicy(NSApplicationActivationPolicy::Accessory);
+        }
     }
 }

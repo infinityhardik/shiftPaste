@@ -63,15 +63,13 @@ pub struct FocusTarget {
     _none: (),
 }
 
-/// Remember the window in front (call before showing the popup).
+/// Remember the window in front (call before showing the popup). On Windows
+/// the taskbar, tray and Shift Paste's own windows are skipped, so opening
+/// from the tray remembers the app you were actually using.
 pub fn remember() -> Option<FocusTarget> {
     #[cfg(windows)]
     {
-        // SAFETY: no arguments; returns the foreground window or null.
-        let hwnd = unsafe { windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow() };
-        (!hwnd.is_null()).then_some(FocusTarget {
-            hwnd: hwnd as isize,
-        })
+        win::remember().map(|hwnd| FocusTarget { hwnd })
     }
     #[cfg(target_os = "macos")]
     {
@@ -83,6 +81,155 @@ pub fn remember() -> Option<FocusTarget> {
     #[cfg(not(any(windows, target_os = "macos")))]
     {
         Some(FocusTarget { _none: () })
+    }
+}
+
+/// The app that owns a remembered window (for app lists and paste keys).
+pub fn app_of(target: FocusTarget) -> Option<AppInfo> {
+    #[cfg(windows)]
+    {
+        let exe = win::exe_name(target.hwnd)?;
+        let name = exe
+            .trim_end_matches(".exe")
+            .trim_end_matches(".EXE")
+            .to_string();
+        Some(AppInfo {
+            name,
+            ids: vec![exe],
+        })
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::NSRunningApplication;
+        let app = NSRunningApplication::runningApplicationWithProcessIdentifier(target.pid)?;
+        let mut ids = Vec::new();
+        if let Some(b) = app.bundleIdentifier() {
+            ids.push(b.to_string());
+        }
+        let name = app
+            .localizedName()
+            .map(|n| n.to_string())
+            .unwrap_or_default();
+        if !name.is_empty() {
+            ids.push(name.clone());
+        }
+        Some(AppInfo { name, ids })
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        let _ = target;
+        current_app()
+    }
+}
+
+#[cfg(windows)]
+mod win {
+    use windows_sys::Win32::Foundation::{CloseHandle, HWND};
+    use windows_sys::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
+        PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetClassNameW, GetForegroundWindow, GetTopWindow, GetWindow, GetWindowLongPtrW,
+        GetWindowTextLengthW, GetWindowThreadProcessId, IsWindowVisible, GWL_EXSTYLE, GW_HWNDNEXT,
+        GW_OWNER, WS_EX_TOOLWINDOW,
+    };
+
+    /// Taskbar, tray overflow and desktop windows: never paste targets.
+    const SHELL_CLASSES: [&str; 6] = [
+        "Shell_TrayWnd",
+        "Shell_SecondaryTrayWnd",
+        "NotifyIconOverflowWindow",
+        "TopLevelWindowForOverflowXamlIsland",
+        "Progman",
+        "WorkerW",
+    ];
+
+    fn class_name(hwnd: HWND) -> String {
+        let mut buf = [0u16; 128];
+        // SAFETY: buffer and length match.
+        let n = unsafe { GetClassNameW(hwnd, buf.as_mut_ptr(), buf.len() as i32) };
+        String::from_utf16_lossy(&buf[..n.max(0) as usize])
+    }
+
+    fn pid_of(hwnd: HWND) -> u32 {
+        let mut pid = 0u32;
+        // SAFETY: `pid` is a valid out-pointer.
+        unsafe { GetWindowThreadProcessId(hwnd, &mut pid) };
+        pid
+    }
+
+    /// A normal, visible, top-level app window that isn't ours or the shell's.
+    fn is_app_window(hwnd: HWND) -> bool {
+        if hwnd.is_null()
+            || pid_of(hwnd) == std::process::id()
+            || SHELL_CLASSES.contains(&class_name(hwnd).as_str())
+        {
+            return false;
+        }
+        // SAFETY: plain queries on a window handle.
+        unsafe {
+            if IsWindowVisible(hwnd) == 0
+                || !GetWindow(hwnd, GW_OWNER).is_null()
+                || GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TOOLWINDOW as isize != 0
+                || GetWindowTextLengthW(hwnd) == 0
+            {
+                return false;
+            }
+            let mut cloaked = 0u32;
+            let hr = DwmGetWindowAttribute(
+                hwnd,
+                DWMWA_CLOAKED as u32,
+                (&mut cloaked as *mut u32).cast(),
+                std::mem::size_of::<u32>() as u32,
+            );
+            hr != 0 || cloaked == 0
+        }
+    }
+
+    pub fn remember() -> Option<isize> {
+        // SAFETY: plain window-manager queries.
+        unsafe {
+            let fg = GetForegroundWindow();
+            if is_app_window(fg) {
+                return Some(fg as isize);
+            }
+            // The taskbar/tray (or our own window) is in front: take the next
+            // real app window in z-order, i.e. the one the user came from.
+            let mut h = GetTopWindow(std::ptr::null_mut());
+            for _ in 0..512 {
+                if h.is_null() {
+                    break;
+                }
+                if is_app_window(h) {
+                    return Some(h as isize);
+                }
+                h = GetWindow(h, GW_HWNDNEXT);
+            }
+            (!fg.is_null()).then_some(fg as isize)
+        }
+    }
+
+    pub fn exe_name(hwnd: isize) -> Option<String> {
+        let pid = pid_of(hwnd as HWND);
+        // SAFETY: the handle is checked and closed; the buffer length is passed in and updated.
+        unsafe {
+            let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if process.is_null() {
+                return None;
+            }
+            let mut buf = [0u16; 1024];
+            let mut len = buf.len() as u32;
+            let ok =
+                QueryFullProcessImageNameW(process, PROCESS_NAME_WIN32, buf.as_mut_ptr(), &mut len);
+            CloseHandle(process);
+            if ok == 0 {
+                return None;
+            }
+            let path = String::from_utf16_lossy(&buf[..len as usize]);
+            path.rsplit(['\\', '/']).next().map(str::to_owned)
+        }
     }
 }
 

@@ -58,6 +58,8 @@ pub struct PopupState {
     front_app: Option<AppIdentity>,
     toast_undo: bool,
     toast_timer: Option<Timer>,
+    /// macOS manual resize: (edge, cursor at start, size at start), physical px.
+    resizing: Option<(i32, (i32, i32), (u32, u32))>,
 }
 
 struct PopupMenu {
@@ -213,6 +215,19 @@ impl App {
         let shortcut = self.settings.borrow().hotkey.shortcut.clone();
         self.register_shortcut(&shortcut);
         platform::hotkey::on_pressed(|id| post(move |app| app.on_hotkey(id)));
+        // Wayland: apps can't grab keys themselves; ask the desktop portal.
+        #[cfg(target_os = "linux")]
+        if platform::is_wayland() {
+            platform::wayland_shortcut::bind(&shortcut, || {
+                post(|app| {
+                    if app.popup.window().is_visible() {
+                        app.hide_popup();
+                    } else {
+                        app.open_popup_for(None);
+                    }
+                })
+            });
+        }
     }
 
     /// Register a shortcut; errors are kept for the Settings window.
@@ -253,7 +268,12 @@ impl App {
                 use platform::tray::TrayCommand as T;
                 match cmd {
                     T::Open => {
-                        let front = platform::foreground::current_app().map(to_identity);
+                        // The taskbar is in front right now; use the app the
+                        // user came from (Windows skips shell windows).
+                        let front = platform::foreground::remember()
+                            .and_then(platform::foreground::app_of)
+                            .or_else(platform::foreground::current_app)
+                            .map(to_identity);
                         app.open_popup_for(front);
                     }
                     T::Editor => crate::editor_ctl::open_editor(app, None),
@@ -390,6 +410,10 @@ impl App {
         });
         p.on_resume_recording(|| with_app(|app| app.set_paused(false)));
         p.on_toast_clicked(|| with_app(|app| app.undo_from_popup()));
+        p.set_resize_all_edges(!cfg!(target_os = "macos"));
+        p.on_resize_start(|dir| with_app(|app| app.resize_start(dir)));
+        p.on_resize_move(|| with_app(|app| app.resize_move()));
+        p.on_resize_end(|| with_app(|app| app.resize_end()));
         p.on_focus_lost(|| {
             with_app(|app| {
                 // Clicking elsewhere closes the popup (but not while it is being opened).
@@ -491,6 +515,67 @@ impl App {
             w.focus_window();
         });
         self.popup.invoke_focus_search();
+    }
+
+    /// Start resizing from an edge. Windows/Linux: the OS drives the resize.
+    /// macOS (no OS support for borderless windows): follow the mouse ourselves.
+    fn resize_start(&self, dir: i32) {
+        use slint::winit_030::winit::window::ResizeDirection as R;
+        use slint::winit_030::WinitWindowAccessor;
+        let direction = match dir {
+            0 => R::North,
+            1 => R::South,
+            2 => R::East,
+            3 => R::West,
+            4 => R::NorthEast,
+            5 => R::NorthWest,
+            6 => R::SouthEast,
+            _ => R::SouthWest,
+        };
+        let mut native = false;
+        if !cfg!(target_os = "macos") {
+            self.popup
+                .window()
+                .with_winit_window(|w| native = w.drag_resize_window(direction).is_ok());
+        }
+        if !native {
+            if let Some(cursor) = platform::cursor::position() {
+                let size = self.popup.window().size();
+                self.popup_state.borrow_mut().resizing =
+                    Some((dir, cursor, (size.width, size.height)));
+            }
+        }
+    }
+
+    fn resize_move(&self) {
+        let Some((dir, (cx, cy), (w, h))) = self.popup_state.borrow().resizing else {
+            return;
+        };
+        let Some((x, y)) = platform::cursor::position() else {
+            return;
+        };
+        let grow_x = matches!(dir, 2 | 4 | 6);
+        let grow_y = matches!(dir, 1 | 6 | 7);
+        let scale = self.popup.window().scale_factor();
+        let min_w = (shiftpaste_core::settings::MIN_POPUP_WIDTH as f32 * scale) as i32;
+        let min_h = (shiftpaste_core::settings::MIN_POPUP_HEIGHT as f32 * scale) as i32;
+        let new_w = if grow_x {
+            (w as i32 + x - cx).max(min_w)
+        } else {
+            w as i32
+        };
+        let new_h = if grow_y {
+            (h as i32 + y - cy).max(min_h)
+        } else {
+            h as i32
+        };
+        self.popup
+            .window()
+            .set_size(slint::PhysicalSize::new(new_w as u32, new_h as u32));
+    }
+
+    fn resize_end(&self) {
+        self.popup_state.borrow_mut().resizing = None;
     }
 
     pub fn hide_popup(&self) {
