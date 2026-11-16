@@ -50,6 +50,18 @@ Run the checks the CI runs:
 cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
 ```
 
+## Releases and installers
+
+Push a tag such as `v2.0.0` and the **Release** workflow builds a draft GitHub Release for you to review and publish. It contains:
+
+| Platform | Download |
+|---|---|
+| Windows | `ShiftPaste-<version>-Setup.exe` (asks for admin, installs for all users) and `ShiftPaste-<version>-portable.zip` |
+| macOS | `ShiftPaste-<version>-macOS-universal.dmg` (Apple Silicon + Intel; not notarized, so right-click → Open the first time) |
+| Linux | `ShiftPaste-<version>-x86_64.AppImage` |
+
+To build locally, use the scripts in [`packaging/`](packaging/) (`makensis` for Windows, `build-dmg.sh` on a Mac, `build-appimage.sh` on Linux).
+
 ## Project layout
 
 ```
@@ -58,6 +70,7 @@ crates/core       No UI, no OS code: database, search, library + undo/redo,
 crates/platform   OS integration: clipboard, hotkey, tray, paste keystrokes,
                   foreground app, launch at login, dialogs, single instance
 crates/app        Slint UI (crates/app/ui/*.slint) and the window controllers
+packaging/        Windows installer (NSIS), macOS bundle/dmg, Linux AppImage
 docs/             Design spec and decisions (RUST_REWRITE_SPEC.md), 1.x report
 legacy/           The Python 1.x app (to be removed when 2.0 ships)
 ```

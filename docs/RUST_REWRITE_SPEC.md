@@ -521,26 +521,34 @@ Notes:
   - The Linux build runs end to end under X11: capture, popup, live search, editor and IPC.
   - Windows and macOS platform code type-checks.
 
+### Also done (2026-11-16, second pass)
+- **Build:** zero warnings; dev builds keep only line tables (target dir ~23 GB → ~2.6 GB).
+- **Popup:**
+  - no taskbar button or Alt+Tab entry on Windows (tool window, like 1.x);
+  - Windows 11 rounded corners and a native shadow;
+  - resize grips on every edge (OS-driven on Windows/Linux; manual right/bottom on macOS);
+  - opening from the tray remembers the app you came from (Windows skips the taskbar and tray).
+- **New logo:** an outlined Shift arrow rising out of a clipboard. Used for the window icons, the tray (a template icon on macOS) and the Windows `.exe` (with version info and a DPI manifest).
+- **macOS:** menu-bar app with no Dock icon (`LSUIElement` in the bundle, Accessory policy at run time), plus an Accessibility permission banner with "Open Settings".
+- **Linux:**
+  - copies marked `x-kde-passwordManagerHint` are skipped on X11 and Wayland;
+  - Wayland global shortcut through the XDG GlobalShortcuts portal.
+- **Features:**
+  - RTF capture and restore (Windows/macOS);
+  - per-app paste keystrokes in Settings;
+  - Alt+↑/↓ to reorder snippets.
+- **Packaging:**
+  - NSIS installer (admin, all users, closes a running copy, launches as the user, optional data removal on uninstall);
+  - portable zip;
+  - universal unsigned `.dmg`;
+  - AppImage;
+  - a tag-triggered release workflow that creates a draft GitHub Release.
+
 ### Still to do before 2.0.0
-1. **Run and test on real Windows and macOS** (only type-checked so far). Measure memory against the §6 targets.
-2. **Popup polish**:
-   - resize handles for the frameless window;
-   - native rounded corners and shadow (Windows 11 DWM, macOS);
-   - remember the previous app when opened from the tray.
-3. **macOS**: menu-bar-only app (`LSUIElement`), and an Accessibility onboarding sheet.
-4. **Linux**:
-   - read `x-kde-passwordManagerHint`;
-   - Wayland GlobalShortcuts portal (today: bind `shiftpaste --toggle`);
-   - test Wayland clipboard watching.
-5. **Smaller items**:
-   - RTF capture (HTML is captured);
-   - UI for per-app paste keystroke overrides (the setting exists);
-   - Alt+↑/↓ keyboard reordering in the editor.
-6. **Packaging** (§5):
-   - NSIS installer with admin prompt, plus portable zip;
-   - universal unsigned `.dmg`;
-   - AppImage;
-   - release workflow.
-7. **Clean-up**:
-   - remove `legacy/` and `dist/`;
-   - verify the preset identifiers on real machines.
+1. **Test on real machines:**
+   - Windows and macOS, and measure memory against the §6 targets;
+   - Wayland (portal shortcut, clipboard watching);
+   - the AppImage build (first run happens in CI);
+   - native popup resizing on GNOME/KDE.
+2. **Verify the preset app identifiers** on real machines.
+3. **At the v2.0.0 tag:** remove `legacy/` and `dist/` (1.x downloads move to that release's notes).

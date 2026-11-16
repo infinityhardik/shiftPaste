@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Shift Paste
+GenericName=Clipboard manager
+Comment=Clipboard history and snippet collections
+Exec=shiftpaste
+Icon=shiftpaste
+Terminal=false
+Categories=Utility;
+Keywords=clipboard;paste;snippets;history;
+StartupNotify=false

@@ -554,6 +554,7 @@ impl App {
                 .window()
                 .with_winit_window(|w| native = w.drag_resize_window(direction).is_ok());
         }
+        tracing::debug!(dir, native, "popup resize started");
         if !native {
             if let Some(cursor) = platform::cursor::position() {
                 let size = self.popup.window().size();

@@ -22,3 +22,6 @@ legacy/data/clipboard.db
 legacy/data/~*.db
 legacy/data/Master/~*.xlsx
 build/
+
+# Packaging output
+packaging/windows/*.exe
