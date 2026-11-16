@@ -13,6 +13,24 @@
 
 ---
 
+## 0. Quality bar (applies to every feature)
+
+Each item is a concrete rule the build is checked against, not a slogan.
+
+| Principle | Rule |
+|---|---|
+| **Simplicity** | Works out of the box with zero setup. Every setting visibly does something (no dead settings like 1.x). Nothing ever needs a restart. Fewer settings beat more settings: if a good default exists, there's no setting. |
+| **Ease of use** | Keyboard-first: every popup and editor action has a shortcut, shown in tooltips/menus. Undo replaces "Are you sure?"; confirmations only for big destructive actions (clear history, delete a collection). Clear empty states, e.g. "No matches. Ctrl+S saves the selected item to a collection". |
+| **First run** | A small welcome card shows the hotkey, how to import Excel/CSV, and (macOS) why Accessibility permission is needed, with a button that opens the right settings page. |
+| **Responsiveness** | The UI thread never waits on disk, clipboard or Excel. Search runs on **every keystroke** with no debounce delay (fast enough in Rust), so 1.x's "search delay" setting is gone. Popup opens ≤ 100 ms after the hotkey. |
+| **Performance & memory** | Event-driven clipboard watching (no 400 ms polling). In-memory search index with pre-normalised text. List views only draw visible rows. Full text loads lazily for the preview pane. SQLite in WAL mode with cached prepared statements. Targets in §6. |
+| **Robustness** | **Never lose data:** every change is a SQLite transaction; `settings.toml` is written to a temp file then renamed. A corrupt database is backed up and recreated with a notice, never silently wiped. Clipboard "busy" errors retry with backoff. Worker-thread panics are caught and logged, and the tray app keeps running. If the hotkey is already taken, a clear message offers to record a different one. One instance only. |
+| **UX appropriateness** | Looks native on each OS (Fluent on Windows, Cupertino on macOS). Uses platform conventions (Cmd on macOS, menu-bar app with no Dock icon). Follows OS light/dark mode and per-monitor DPI scaling. |
+| **Accessibility** | Screen-reader labels via AccessKit (built into Slint), full keyboard navigation, visible focus, readable contrast in both themes. |
+| **Paste reliability** | Pastes into the window you came from, even when opened from the tray. Uses the right paste keystroke per app (§2.3). Never re-records its own paste as a new copy. |
+
+---
+
 ## 1. Decision log
 
 | # | Topic | Decision |
@@ -36,11 +54,13 @@
 | 16b | Password-manager "don't record" flags | **Honoured, as a setting** (on by default **[default]**) |
 | 16c | What the app lists control | **Capture and hotkey separately**, each with its own mode and list |
 | 17 | Migration from 1.x | **Fresh start**, no automatic or manual migration |
-| 18 | Windows | **Installer + portable .exe** |
+| 18 | Windows | **Installer with admin (UAC) prompt**, installing for all users into Program Files, **+ portable .exe** |
 | 18b | macOS | **Unsigned .dmg** (Intel + Apple Silicon) |
 | 18c | Linux | **AppImage only** |
 | 19 | Repo layout | **Rust replaces Python** in this repo. Python moves to `legacy/` until done, then is deleted. Committed .exe files move to GitHub Releases |
 | 20 | Release plan | **One big release** (v2.0.0) when everything here is done |
+| 21 | Clicking a popup row | **Single click pastes**, as today |
+| 22 | Language | **Rust**, confirmed after a side-by-side memory measurement (§6.1) |
 
 Not chosen (so out of scope for 2.0):
 - image/file capture
@@ -93,7 +113,12 @@ Not chosen (so out of scope for 2.0):
   | `Delete` | remove the selected history item |
 
   On macOS, Cmd replaces Ctrl.
-- **Single click selects; double-click pastes.** **[default]** This avoids accidental pastes, which today happen on a single click.
+- **Mouse:** hovering highlights a row; a **single click pastes it**, as today.
+- **Paste keystroke per app:**
+  - `Ctrl+V` is the default (`Cmd+V` on macOS).
+  - Linux terminals (GNOME Terminal, Konsole, Alacritty, kitty, xterm, …) get `Ctrl+Shift+V`, because `Ctrl+V` doesn't paste there.
+  - There's a built-in list of known terminals, plus a per-app override in Settings.
+  - While Shift Paste sends the keystroke, its own hotkey is briefly switched off so it can't trigger itself.
 
 ### 2.4 Search and ranking
 - **Matcher:** [`nucleo-matcher`](https://crates.io/crates/nucleo-matcher) (from the Helix editor).
@@ -103,6 +128,7 @@ Not chosen (so out of scope for 2.0):
 - **Searched fields:** Content and Title for snippets; Content for history.
 - **Order:** sort by match score. Among results whose scores are within ~10% of each other, the most recently used or copied comes first.
 - **Speed target:** under 10 ms for 5,000 history items plus 20,000 snippets. Searching an in-memory index is fine at this scale.
+- **No debounce:** results update on every keystroke. If a search is still running when the next key arrives, the stale one is dropped.
 
 ### 2.5 Collections editor (main window)
 List + detail layout:
@@ -312,11 +338,16 @@ history     (id, content, content_hash UNIQUE, html NULL, rtf NULL,
 
 - **CI** (every push), on Windows, macOS and Ubuntu: `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`.
 - **Release** (on tag `v*`), built by GitHub Actions and attached to a GitHub Release:
-  - **Windows:** per-user **NSIS installer** (no admin prompt) **[default]** plus a **portable `.exe`** (zip).
+  - **Windows:** an **NSIS installer that asks for admin (UAC)** and installs for all users into `Program Files\Shift Paste`, with a Start-menu entry, optional desktop shortcut and uninstaller. Plus a **portable `.exe`** (zip).
+    - Before installing or uninstalling, the installer closes a running Shift Paste.
+    - Uninstalling keeps the user's data unless they tick "Also delete my data".
+    - The "Launch Shift Paste" checkbox at the end starts the app **as the normal user, not as admin**. A program started from an admin installer would otherwise run with admin rights, and its data could land in the wrong user profile.
+    - "Launch at login" stays per user (HKCU) and is controlled from the app's Settings.
   - **macOS:** **unsigned universal `.dmg`** (Intel + Apple Silicon, ad-hoc signed as Apple Silicon requires).
   - **Linux:** **AppImage** (x86_64).
 - **Tool:** `cargo-packager`, or plain per-OS scripts if it falls short.
-- **Release profile:** `opt-level = "s"` or `3` (whichever measures better), `lto = "thin"`, `codegen-units = 1`, `strip = true`, `panic = "abort"`.
+- **Release profile:** `opt-level = "s"` or `3` (whichever measures better), `lto = "thin"`, `codegen-units = 1`, `strip = true`.
+  - Panics are left on the default "unwind" setting so a bug in a worker thread is caught and logged without killing the always-running app. This is a robustness-over-size choice.
 - **Housekeeping:**
   - Delete `dist/*.exe` from the repo; binaries live in Releases.
   - Remove `shiftpaste.spec` and `setup_script.iss` along with `legacy/` at the end.
@@ -338,6 +369,21 @@ history     (id, content, content_hash UNIQUE, html NULL, rtf NULL,
 
 These are measured on each OS before release. If Slint's GPU renderer misses the idle target, try the software renderer and/or destroying the popup window while hidden.
 
+### 6.1 Measured baseline (2026-11-16)
+The real 1.x app and a minimal Rust + Slint popup spike (frameless 420×480, search box, 20-row list, Slint software renderer, release build) were run on the same Linux virtual display (Xvfb, software rendering). Memory was read from `/proc/self/status`:
+
+| Phase | Python 1.x (PySide6) RSS / private | Rust + Slint spike RSS / private |
+|---|---|---|
+| Started, popup hidden | 74–75 MB / 28–29 MB | **14 MB / 1 MB** |
+| Popup shown | 77–78 MB / 29 MB | **16 MB / 1 MB** |
+| Popup hidden again | 77–78 MB / 29 MB | **16 MB / 1 MB** |
+| On-disk size | 54 MB .exe (bundled Python + 142 MB of Qt libraries before compression) | **15 MB** single binary (Linux, stripped) |
+
+Caveats:
+- The spike has no database, tray, hotkey or clipboard watcher yet. Expect the full app to land around **25–40 MB**. On Linux the tray's GTK dependency adds the most; on Windows the tray is native and nearly free.
+- Windows and macOS numbers will differ, so re-measure there (§6 targets).
+- The difference comes mostly from dropping the Python interpreter and Qt, not from "Rust being fast".
+
 ---
 
 ## 7. Known risks and limitations (accepted)
@@ -351,7 +397,7 @@ These are measured on each OS before release. If Slint's GPU renderer misses the
    - **The Accessibility permission resets after every update**, because the code signature changes. Users must re-tick Shift Paste in System Settings. Signing later fixes this.
 3. **Unsigned Windows binaries:** SmartScreen may warn ("More info → Run anyway") until the app builds reputation.
 4. **AppImage** needs FUSE 2 (`libfuse2`) on some newer distros.
-5. **The hotkey is reserved system-wide** (decision 15). Excluded apps don't receive `Ctrl+Shift+V`, which is "paste as plain text" in browsers and Office.
+5. **The hotkey is reserved system-wide** (decision 15). Excluded apps don't receive `Ctrl+Shift+V`, which is "paste as plain text" in browsers and Slack, and "paste" in Linux terminals. **Open question:** whether to add "pass-through", where Shift Paste re-sends the keystroke to excluded apps.
 6. **No migration from 1.x** (decision 17). Users re-import their Excel files with the new importer.
 
 ---
