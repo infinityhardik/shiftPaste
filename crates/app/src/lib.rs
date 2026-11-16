@@ -15,8 +15,36 @@ pub mod ui {
 
 use shiftpaste_core::presets::Platform;
 
-/// Window title of the popup (also used to recognise it in the winit hook).
-pub const POPUP_TITLE: &str = "Shift Paste";
+/// Set while the popup window is being created, so the winit hook can give
+/// it (and only it) popup attributes. Slint calls the hook with default
+/// attributes, so the title can't be used to recognise the popup.
+pub static CREATING_POPUP: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// winit attributes hook: popup-only tweaks.
+/// - Windows: no taskbar button (like 1.x) and a native shadow.
+/// - macOS: a native shadow for the borderless window.
+pub fn adjust_window_attributes(
+    attrs: slint::winit_030::winit::window::WindowAttributes,
+) -> slint::winit_030::winit::window::WindowAttributes {
+    if !CREATING_POPUP.load(std::sync::atomic::Ordering::SeqCst) {
+        return attrs;
+    }
+    #[cfg(windows)]
+    {
+        use slint::winit_030::winit::platform::windows::WindowAttributesExtWindows;
+        attrs.with_skip_taskbar(true).with_undecorated_shadow(true)
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use slint::winit_030::winit::platform::macos::WindowAttributesExtMacOS;
+        attrs.with_has_shadow(true)
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        attrs
+    }
+}
 
 /// Key-cap labels for footers and menus, per OS.
 pub fn key_labels() -> ui::Keys {

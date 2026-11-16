@@ -174,12 +174,14 @@ export component ImportWindow inherits Window {
                                     Text { text: col.name; color: Theme.text; font-weight: 600; overflow: elide; }
                                     Text { text: col.sample == "" ? "(empty)" : "e.g. " + col.sample; color: Theme.text-faint; font-size: Theme.font-xs; overflow: elide; }
                                 }
-                                ComboBox {
-                                    width: 150px;
-                                    y: (parent.height - self.height) / 2;
-                                    model: root.field-options;
-                                    current-index: col.field;
-                                    selected => { root.column-field-changed(i, self.current-index); }
+                                VerticalLayout {
+                                    alignment: center;
+                                    ComboBox {
+                                        width: 150px;
+                                        model: root.field-options;
+                                        current-index: col.field;
+                                        selected => { root.column-field-changed(i, self.current-index); }
+                                    }
                                 }
                             }
                             if i < root.columns.length - 1: Divider { y: parent.height - 1px; }

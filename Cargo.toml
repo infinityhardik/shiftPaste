@@ -23,5 +23,11 @@ lto = "thin"
 codegen-units = 1
 strip = true
 
+[profile.dev]
+# Line numbers for backtraces, without full debug info: far smaller and
+# faster builds.
+debug = "line-tables-only"
+
 [profile.dev.package."*"]
 opt-level = 2
+debug = false

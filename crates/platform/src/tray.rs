@@ -19,7 +19,12 @@ pub enum TrayCommand {
     Quit,
 }
 
+/// Full-colour logo for Windows/Linux; a black+alpha "template" on macOS, which
+/// the menu bar tints for light and dark mode.
+#[cfg(not(target_os = "macos"))]
 const ICON_PNG: &[u8] = include_bytes!("../assets/tray-64.png");
+#[cfg(target_os = "macos")]
+const ICON_PNG: &[u8] = include_bytes!("../assets/tray-template-36.png");
 
 fn icon() -> Result<Icon> {
     let mut decoder = png::Decoder::new(std::io::Cursor::new(ICON_PNG));
@@ -99,13 +104,15 @@ impl Tray {
         #[cfg(not(target_os = "linux"))]
         {
             let (menu, pause) = build_menu(paused)?;
-            let icon = TrayIconBuilder::new()
+            let builder = TrayIconBuilder::new()
                 .with_menu(Box::new(menu))
                 .with_menu_on_left_click(false)
-                .with_tooltip("Shift Paste")
-                .with_icon(icon()?)
-                .build()
-                .map_err(Error::new)?;
+                .with_tooltip("Shift Paste");
+            #[cfg(target_os = "macos")]
+            let builder = builder.with_icon_templated(icon()?);
+            #[cfg(not(target_os = "macos"))]
+            let builder = builder.with_icon(icon()?);
+            let icon = builder.build().map_err(Error::new)?;
             Ok(Tray { _icon: icon, pause })
         }
         #[cfg(target_os = "linux")]

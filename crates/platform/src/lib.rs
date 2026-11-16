@@ -14,6 +14,7 @@ pub mod input;
 pub mod instance;
 pub mod shell;
 pub mod tray;
+pub mod window;
 
 #[derive(Debug, thiserror::Error)]
 #[error("{0}")]

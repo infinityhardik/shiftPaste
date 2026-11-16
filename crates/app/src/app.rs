@@ -102,7 +102,9 @@ impl App {
         settings: Settings,
         notice: Option<String>,
     ) -> Rc<App> {
+        crate::CREATING_POPUP.store(true, Ordering::SeqCst);
         let popup = PopupWindow::new().expect("popup window");
+        crate::CREATING_POPUP.store(false, Ordering::SeqCst);
         let app = Rc::new(App {
             paths,
             lib: RefCell::new(lib),
@@ -471,6 +473,20 @@ impl App {
                     (p.y + s.height as i32 - size.height as i32 - margin).max(p.y + margin),
                 );
                 w.set_outer_position(slint::winit_030::winit::dpi::PhysicalPosition::new(x, y));
+            }
+            // No taskbar button / Alt+Tab entry, rounded corners (Windows).
+            #[cfg(windows)]
+            {
+                use slint::winit_030::winit::platform::windows::WindowExtWindows;
+                use slint::winit_030::winit::raw_window_handle::{
+                    HasWindowHandle, RawWindowHandle,
+                };
+                w.set_skip_taskbar(true);
+                if let Ok(handle) = w.window_handle() {
+                    if let RawWindowHandle::Win32(h) = handle.as_raw() {
+                        platform::window::polish_popup(h.hwnd.get());
+                    }
+                }
             }
             w.focus_window();
         });

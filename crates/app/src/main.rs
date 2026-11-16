@@ -113,21 +113,11 @@ fn run_command(app: &std::rc::Rc<App>, cmd: Command) {
     }
 }
 
-/// winit backend; the popup stays out of the Windows taskbar / Alt+Tab.
+/// winit backend; the popup stays out of the Windows taskbar and Alt+Tab.
 fn select_backend() -> Result<(), slint::PlatformError> {
-    use slint::winit_030::winit;
     slint::BackendSelector::new()
         .backend_name("winit".into())
-        .with_winit_window_attributes_hook(|attrs: winit::window::WindowAttributes| {
-            #[cfg(windows)]
-            {
-                use winit::platform::windows::WindowAttributesExtWindows;
-                if attrs.title == shiftpaste_app::POPUP_TITLE {
-                    return attrs.with_skip_taskbar(true);
-                }
-            }
-            attrs
-        })
+        .with_winit_window_attributes_hook(shiftpaste_app::adjust_window_attributes)
         .select()
 }
 
