@@ -1,0 +1,252 @@
+// Import wizard ("Advanced…"): sheet, header row, column mapping, target, mode, live preview.
+
+import { ComboBox, LineEdit, ScrollView, ListView, Palette, CheckBox } from "std-widgets.slint";
+import { Theme, Icons } from "theme.slint";
+import { Icon, Button, Chip, SectionLabel, Divider, VDivider, Segmented, SettingsCard } from "widgets.slint";
+
+export struct ColumnMap {
+    name: string,
+    sample: string,
+    field: int,
+}
+
+export struct PreviewRow {
+    title: string,
+    content: string,
+    tags: string,
+    notes: string,
+}
+
+component Label inherits Text {
+    font-size: Theme.font-sm;
+    color: Theme.text-subtle;
+}
+
+export component ImportWindow inherits Window {
+    title: "Import into Shift Paste";
+    icon: Icons.logo;
+    background: Theme.surface;
+    default-font-size: Theme.font-md;
+    preferred-width: 920px;
+    preferred-height: 620px;
+    min-width: 760px;
+    min-height: 500px;
+
+    property <bool> dark-scheme: Theme.dark;
+    init => { Palette.color-scheme = self.dark-scheme ? ColorScheme.dark : ColorScheme.light; }
+    changed dark-scheme => { Palette.color-scheme = self.dark-scheme ? ColorScheme.dark : ColorScheme.light; }
+
+    in property <string> file-name;
+    in property <string> file-info;
+    in property <[string]> sheets;
+    in-out property <int> sheet-index;
+    in-out property <bool> has-header;
+    in property <[ColumnMap]> columns;
+    in property <[string]> field-options: ["Content", "Title", "Tags", "Notes", "Ignore"];
+    in-out property <int> target-mode;
+    in-out property <string> new-name;
+    in property <[string]> collections;
+    in-out property <int> existing-index;
+    in-out property <int> import-mode;
+    in property <[PreviewRow]> preview;
+    in property <string> summary;
+    in property <string> problem;
+    in property <bool> can-import: true;
+
+    callback sheet-changed(int);
+    callback options-changed();
+    callback column-field-changed(int, int);
+    callback do-import();
+    callback cancel();
+
+    VerticalLayout {
+        // ---- header
+        Rectangle {
+            height: 64px;
+            background: Theme.bg;
+            HorizontalLayout {
+                padding-left: 20px;
+                padding-right: 20px;
+                spacing: 12px;
+                Rectangle {
+                    width: 36px;
+                    height: 36px;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: Theme.radius-md;
+                    background: Theme.accent-soft;
+                    Icon { source: Icons.file; size: 18px; tint: Theme.accent; }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Text { text: "Import “" + root.file-name + "”"; font-size: Theme.font-lg; font-weight: 700; color: Theme.text; overflow: elide; }
+                    Text { text: root.file-info; font-size: Theme.font-sm; color: Theme.text-subtle; }
+                }
+            }
+        }
+        Divider { }
+
+        HorizontalLayout {
+            vertical-stretch: 1;
+            // ---- options
+            ScrollView {
+                width: 330px;
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 14px;
+                    alignment: start;
+                    SettingsCard {
+                        title: "Source";
+                        if root.sheets.length > 1: VerticalLayout {
+                            spacing: 6px;
+                            Label { text: "Sheet"; }
+                            ComboBox {
+                                model: root.sheets;
+                                current-index <=> root.sheet-index;
+                                selected => { root.sheet-changed(root.sheet-index); }
+                            }
+                        }
+                        CheckBox {
+                            text: "First row is a header";
+                            checked <=> root.has-header;
+                            toggled => { root.options-changed(); }
+                        }
+                    }
+                    SettingsCard {
+                        title: "Import into";
+                        Segmented {
+                            options: ["New collection", "Existing collection"];
+                            current <=> root.target-mode;
+                            changed => { root.options-changed(); }
+                        }
+                        if root.target-mode == 0: LineEdit {
+                            text <=> root.new-name;
+                            placeholder-text: "Collection name";
+                            edited => { root.options-changed(); }
+                        }
+                        if root.target-mode == 1: ComboBox {
+                            model: root.collections;
+                            current-index <=> root.existing-index;
+                            selected => { root.options-changed(); }
+                        }
+                    }
+                    SettingsCard {
+                        title: "Rows already in the collection";
+                        Segmented {
+                            options: root.target-mode == 0 ? ["Skip duplicates", "Keep all"] : ["Skip duplicates", "Keep all", "Replace all"];
+                            current <=> root.import-mode;
+                            changed => { root.options-changed(); }
+                        }
+                        Text {
+                            text: root.import-mode == 0 ? "Rows whose content is already there (or repeats in the file) are skipped."
+                                : root.import-mode == 1 ? "Every row is added, even repeats."
+                                : "The collection's current snippets are removed first. You can undo this.";
+                            wrap: word-wrap;
+                            font-size: Theme.font-sm;
+                            color: root.import-mode == 2 ? Theme.danger : Theme.text-subtle;
+                        }
+                    }
+                }
+            }
+            VDivider { }
+
+            // ---- columns + preview
+            VerticalLayout {
+                horizontal-stretch: 1;
+                padding: 16px;
+                spacing: 12px;
+                SectionLabel { text: "COLUMNS"; }
+                Rectangle {
+                    height: min(root.columns.length * 46px + 2px, 190px);
+                    border-radius: Theme.radius-md;
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    background: Theme.bg;
+                    ListView {
+                        for col[i] in root.columns: Rectangle {
+                            height: 46px;
+                            HorizontalLayout {
+                                padding-left: 12px;
+                                padding-right: 8px;
+                                spacing: 12px;
+                                VerticalLayout {
+                                    alignment: center;
+                                    horizontal-stretch: 1;
+                                    Text { text: col.name; color: Theme.text; font-weight: 600; overflow: elide; }
+                                    Text { text: col.sample == "" ? "(empty)" : "e.g. " + col.sample; color: Theme.text-faint; font-size: Theme.font-xs; overflow: elide; }
+                                }
+                                ComboBox {
+                                    width: 150px;
+                                    y: (parent.height - self.height) / 2;
+                                    model: root.field-options;
+                                    current-index: col.field;
+                                    selected => { root.column-field-changed(i, self.current-index); }
+                                }
+                            }
+                            if i < root.columns.length - 1: Divider { y: parent.height - 1px; }
+                        }
+                    }
+                }
+                SectionLabel { text: "PREVIEW"; }
+                Rectangle {
+                    vertical-stretch: 1;
+                    border-radius: Theme.radius-md;
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    background: Theme.bg;
+                    clip: true;
+                    VerticalLayout {
+                        Rectangle {
+                            height: 32px;
+                            background: Theme.surface;
+                            HorizontalLayout {
+                                padding-left: 12px;
+                                spacing: 12px;
+                                Text { width: 22%; text: "Title"; font-weight: 600; font-size: Theme.font-xs; color: Theme.text-subtle; vertical-alignment: center; }
+                                Text { horizontal-stretch: 1; text: "Content"; font-weight: 600; font-size: Theme.font-xs; color: Theme.text-subtle; vertical-alignment: center; }
+                                Text { width: 18%; text: "Tags"; font-weight: 600; font-size: Theme.font-xs; color: Theme.text-subtle; vertical-alignment: center; }
+                                Text { width: 18%; text: "Notes"; font-weight: 600; font-size: Theme.font-xs; color: Theme.text-subtle; vertical-alignment: center; }
+                            }
+                        }
+                        Divider { }
+                        ListView {
+                            for p[i] in root.preview: Rectangle {
+                                height: 36px;
+                                background: mod(i, 2) == 1 ? Theme.surface.with-alpha(0.5) : transparent;
+                                HorizontalLayout {
+                                    padding-left: 12px;
+                                    spacing: 12px;
+                                    Text { width: 22%; text: p.title; color: Theme.text; overflow: elide; vertical-alignment: center; }
+                                    Text { horizontal-stretch: 1; text: p.content; color: Theme.text; overflow: elide; vertical-alignment: center; }
+                                    Text { width: 18%; text: p.tags; color: Theme.accent; overflow: elide; vertical-alignment: center; font-size: Theme.font-sm; }
+                                    Text { width: 18%; text: p.notes; color: Theme.text-subtle; overflow: elide; vertical-alignment: center; font-size: Theme.font-sm; }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---- footer
+        Divider { }
+        Rectangle {
+            height: 60px;
+            background: Theme.bg;
+            HorizontalLayout {
+                padding-left: 20px;
+                padding-right: 16px;
+                spacing: 10px;
+                Icon { y: (parent.height - self.height) / 2; source: root.problem != "" ? Icons.info : Icons.check; size: 16px; tint: root.problem != "" ? Theme.danger : Theme.success; }
+                Text {
+                    text: root.problem != "" ? root.problem : root.summary;
+                    color: root.problem != "" ? Theme.danger : Theme.text-muted;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+                Button { y: (parent.height - self.height) / 2; text: "Cancel"; clicked => { root.cancel(); } }
+                Button { y: (parent.height - self.height) / 2; text: "Import"; primary: true; enabled: root.can-import && root.problem == ""; clicked => { root.do-import(); } }
+            }
+        }
+    }
+}

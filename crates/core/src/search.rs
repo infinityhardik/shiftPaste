@@ -535,14 +535,24 @@ fn display_parts(title: &str, text: &str) -> (String, String) {
     )
 }
 
-/// Collapse all whitespace (including newlines) to single spaces and cap the length.
+/// One display line: whitespace inside each line collapsed, non-empty lines
+/// joined with " · " (so an address reads "4th Floor · Link Road"), capped.
 pub fn one_line(text: &str, max_chars: usize) -> String {
     let mut out = String::new();
-    for (n, word) in text.split_whitespace().enumerate() {
-        if n > 0 {
-            out.push(' ');
+    for line in text.lines() {
+        let mut words = line.split_whitespace().peekable();
+        if words.peek().is_none() {
+            continue;
         }
-        out.push_str(word);
+        if !out.is_empty() {
+            out.push_str(" · ");
+        }
+        for (n, word) in words.enumerate() {
+            if n > 0 {
+                out.push(' ');
+            }
+            out.push_str(word);
+        }
         if out.chars().count() >= max_chars {
             break;
         }
@@ -726,10 +736,13 @@ mod tests {
 
     #[test]
     fn display_parts_split_first_line() {
-        let (t, p) = display_parts("", "\n  Dear team,\n  please   find\tattached ");
+        let (t, p) = display_parts("", "\n  Dear team,\n  please   find\tattached \n\n soon");
         assert_eq!(t, "Dear team,");
-        assert_eq!(p, "please find attached");
+        assert_eq!(p, "please find attached · soon");
         let (t, p) = display_parts("Greeting", "Dear team,\nthanks");
-        assert_eq!((t.as_str(), p.as_str()), ("Greeting", "Dear team, thanks"));
+        assert_eq!(
+            (t.as_str(), p.as_str()),
+            ("Greeting", "Dear team, · thanks")
+        );
     }
 }

@@ -1,7 +1,7 @@
 // The popup: search field, results, optional preview pane, menus and key hints.
 // All keyboard behaviour is decided in Rust (`handle-key`), so it is testable.
 
-import { ListView, ScrollView } from "std-widgets.slint";
+import { ListView, ScrollView, Palette } from "std-widgets.slint";
 import { Theme, Icons } from "theme.slint";
 import { Icon, IconButton, Kbd, KeyHint, Chip, SectionLabel, Divider, VDivider, EmptyState, Card, MenuRow, Toast } from "widgets.slint";
 
@@ -218,6 +218,11 @@ export component PopupWindow inherits Window {
     preferred-width: 460px;
     preferred-height: 540px;
     icon: Icons.logo;
+
+    // Keep the standard widgets (text boxes, scrollbars) in the same light/dark scheme.
+    property <bool> dark-scheme: Theme.dark;
+    init => { Palette.color-scheme = self.dark-scheme ? ColorScheme.dark : ColorScheme.light; }
+    changed dark-scheme => { Palette.color-scheme = self.dark-scheme ? ColorScheme.dark : ColorScheme.light; }
 
     // ---- data from Rust
     in property <[PopupRow]> rows;

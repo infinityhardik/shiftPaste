@@ -1,0 +1,518 @@
+// Settings: General · Shortcut · History · Privacy · Data · About.
+// Every control here changes a setting that takes effect immediately.
+
+import { ComboBox, ScrollView, ListView, Palette, AboutSlint } from "std-widgets.slint";
+import { Theme, Icons } from "theme.slint";
+import { Icon, IconButton, Button, Kbd, Chip, SectionLabel, Divider, VDivider, Card, Segmented, Toggle, SettingsCard } from "widgets.slint";
+
+export struct AppRow {
+    label: string,
+    detail: string,
+}
+
+export struct PickRow {
+    // A group heading when `section` is true.
+    section: bool,
+    label: string,
+    detail: string,
+    checked: bool,
+}
+
+component NavItem inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <bool> selected;
+    callback clicked();
+    height: 34px;
+    border-radius: Theme.radius-md;
+    background: selected ? Theme.accent-soft-strong : touch.has-hover ? Theme.hover : transparent;
+    accessible-role: tab;
+    accessible-label: text;
+    accessible-item-selected: selected;
+    HorizontalLayout {
+        padding-left: 10px;
+        spacing: 10px;
+        Icon { y: (parent.height - self.height) / 2; source: root.icon; size: 15px; tint: selected ? Theme.accent : Theme.text-subtle; }
+        Text { text: root.text; vertical-alignment: center; color: Theme.text; font-weight: selected ? 600 : 400; }
+    }
+    touch := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+// App list with mode switch, used for both capture and hotkey lists.
+component AppListEditor inherits VerticalLayout {
+    in property <[string]> modes;
+    in-out property <int> mode;
+    in property <[AppRow]> apps;
+    in property <string> empty-text;
+    callback mode-changed(int);
+    callback add();
+    callback remove(int);
+    spacing: 10px;
+    Segmented {
+        options: root.modes;
+        current <=> root.mode;
+        changed(i) => { root.mode-changed(i); }
+    }
+    Rectangle {
+        border-radius: Theme.radius-md;
+        border-width: 1px;
+        border-color: Theme.border;
+        background: Theme.bg;
+        height: max(44px, min(200px, root.apps.length * 40px + 4px));
+        if root.apps.length == 0: Text {
+            text: root.empty-text;
+            color: Theme.text-faint;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            wrap: word-wrap;
+            width: parent.width - 24px;
+        }
+        ListView {
+            for a[i] in root.apps: Rectangle {
+                height: 40px;
+                HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 6px;
+                    spacing: 10px;
+                    Icon { y: (parent.height - self.height) / 2; source: Icons.apps; size: 14px; }
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        Text { text: a.label; color: Theme.text; overflow: elide; }
+                        if a.detail != "": Text { text: a.detail; font-size: Theme.font-xs; color: Theme.text-faint; overflow: elide; }
+                    }
+                    IconButton {
+                        y: (parent.height - self.height) / 2;
+                        icon: Icons.close;
+                        label: "Remove " + a.label;
+                        size: 26px;
+                        icon-size: 12px;
+                        clicked => { root.remove(i); }
+                    }
+                }
+                if i < root.apps.length - 1: Divider { y: parent.height - 1px; x: 12px; width: parent.width - 24px; }
+            }
+        }
+    }
+    HorizontalLayout {
+        alignment: start;
+        Button { text: "Add apps…"; icon: Icons.plus; has-icon: true; clicked => { root.add(); } }
+    }
+}
+
+export component SettingsWindow inherits Window {
+    title: "Shift Paste Settings";
+    icon: Icons.logo;
+    background: Theme.surface;
+    default-font-size: Theme.font-md;
+    preferred-width: 780px;
+    preferred-height: 600px;
+    min-width: 640px;
+    min-height: 460px;
+
+    property <bool> dark-scheme: Theme.dark;
+    init => { Palette.color-scheme = self.dark-scheme ? ColorScheme.dark : ColorScheme.light; }
+    changed dark-scheme => { Palette.color-scheme = self.dark-scheme ? ColorScheme.dark : ColorScheme.light; }
+
+    in-out property <int> page: 0;
+
+    // General
+    in-out property <bool> launch-at-login;
+    in-out property <int> theme-mode; // 0 system, 1 light, 2 dark
+    // Shortcut
+    in property <[string]> shortcut-caps;
+    in property <bool> recording-shortcut;
+    in property <string> shortcut-error;
+    in-out property <int> hotkey-mode;
+    in property <[AppRow]> hotkey-apps;
+    in property <string> pass-through-note;
+    // History
+    in property <[string]> max-items-options: ["100", "500", "1,000", "5,000", "Unlimited"];
+    in-out property <int> max-items-index: 1;
+    in property <[string]> max-age-options: ["7 days", "30 days", "90 days", "1 year", "Never"];
+    in-out property <int> max-age-index: 2;
+    in-out property <bool> keep-formatting;
+    in property <string> history-summary;
+    // Privacy
+    in-out property <bool> honour-password-flags;
+    in-out property <bool> recording-paused;
+    in-out property <int> capture-mode;
+    in property <[AppRow]> capture-apps;
+    in property <string> platform-note;
+    // Data
+    in property <string> data-folder;
+    in property <bool> portable;
+    in property <string> version;
+
+    // App picker overlay
+    in property <bool> picker-open;
+    in property <string> picker-title;
+    in-out property <int> picker-tab;
+    in property <[PickRow]> picker-rows;
+    in-out property <string> picker-filter;
+
+    callback changed-general();
+    callback record-shortcut();
+    callback reset-shortcut();
+    callback hotkey-mode-changed(int);
+    callback hotkey-add();
+    callback hotkey-remove(int);
+    callback changed-history();
+    callback clear-history();
+    callback changed-privacy();
+    callback capture-mode-changed(int);
+    callback capture-add();
+    callback capture-remove(int);
+    callback open-data-folder();
+    callback export-all();
+    callback reset-popup-size();
+    callback open-link(string);
+    callback picker-tab-changed(int);
+    callback picker-filter-edited(string);
+    callback picker-toggled(int);
+    callback picker-browse();
+    callback picker-done();
+    callback shortcut-key(string, bool, bool, bool, bool) -> bool;
+
+    FocusScope {
+        capture-key-pressed(e) => {
+            if (root.recording-shortcut && root.shortcut-key(e.text, e.modifiers.control, e.modifiers.shift, e.modifiers.alt, e.modifiers.meta)) {
+                return accept;
+            }
+            reject
+        }
+        HorizontalLayout {
+            // ------------------------------------------------------------- nav
+            Rectangle {
+                width: 200px;
+                background: Theme.surface;
+                VerticalLayout {
+                    padding: 12px;
+                    spacing: 2px;
+                    Text {
+                        text: "Settings";
+                        font-size: Theme.font-xl;
+                        font-weight: 700;
+                        color: Theme.text;
+                        height: 44px;
+                        vertical-alignment: center;
+                    }
+                    NavItem { text: "General"; icon: Icons.sliders; selected: root.page == 0; clicked => { root.page = 0; } }
+                    NavItem { text: "Shortcut"; icon: Icons.keyboard; selected: root.page == 1; clicked => { root.page = 1; } }
+                    NavItem { text: "History"; icon: Icons.clock; selected: root.page == 2; clicked => { root.page = 2; } }
+                    NavItem { text: "Privacy"; icon: Icons.shield; selected: root.page == 3; clicked => { root.page = 3; } }
+                    NavItem { text: "Data"; icon: Icons.database; selected: root.page == 4; clicked => { root.page = 4; } }
+                    NavItem { text: "About"; icon: Icons.info; selected: root.page == 5; clicked => { root.page = 5; } }
+                    Rectangle { vertical-stretch: 1; }
+                }
+            }
+            VDivider { }
+
+            // ------------------------------------------------------- content
+            Rectangle {
+                horizontal-stretch: 1;
+                background: Theme.bg;
+                ScrollView {
+                    VerticalLayout {
+                        padding: 24px;
+                        spacing: 16px;
+                        alignment: start;
+
+                        if root.page == 0: VerticalLayout {
+                            spacing: 16px;
+                            Text { text: "General"; font-size: Theme.font-2xl; font-weight: 700; color: Theme.text; }
+                            SettingsCard {
+                                Toggle {
+                                    text: "Launch Shift Paste when you log in";
+                                    description: "Recommended, so the shortcut always works.";
+                                    checked <=> root.launch-at-login;
+                                    toggled => { root.changed-general(); }
+                                }
+                            }
+                            SettingsCard {
+                                title: "Appearance";
+                                Segmented {
+                                    options: ["Match system", "Light", "Dark"];
+                                    current <=> root.theme-mode;
+                                    changed => { root.changed-general(); }
+                                }
+                            }
+                            SettingsCard {
+                                title: "Popup size";
+                                subtitle: "Drag the popup's edges to resize it; the size is remembered.";
+                                HorizontalLayout { alignment: start; Button { text: "Reset popup size"; clicked => { root.reset-popup-size(); } } }
+                            }
+                        }
+
+                        if root.page == 1: VerticalLayout {
+                            spacing: 16px;
+                            Text { text: "Shortcut"; font-size: Theme.font-2xl; font-weight: 700; color: Theme.text; }
+                            SettingsCard {
+                                title: "Open Shift Paste";
+                                subtitle: "Press this anywhere to open the popup next to your mouse.";
+                                HorizontalLayout {
+                                    spacing: 10px;
+                                    Rectangle {
+                                        height: 40px;
+                                        min-width: 220px;
+                                        border-radius: Theme.radius-md;
+                                        border-width: root.recording-shortcut ? 2px : 1px;
+                                        border-color: root.recording-shortcut ? Theme.accent : Theme.border-strong;
+                                        background: root.recording-shortcut ? Theme.accent-soft : Theme.surface;
+                                        accessible-role: button;
+                                        accessible-label: "Shortcut, press to change";
+                                        HorizontalLayout {
+                                            padding-left: 12px;
+                                            spacing: 6px;
+                                            alignment: start;
+                                            if root.recording-shortcut: Text { text: "Press the new shortcut…  (Esc to cancel)"; color: Theme.accent; vertical-alignment: center; }
+                                            if !root.recording-shortcut: HorizontalLayout {
+                                                spacing: 5px;
+                                                for cap in root.shortcut-caps: Kbd { text: cap; y: (parent.height - self.height) / 2; height: 24px; min-width: 26px; }
+                                            }
+                                        }
+                                        TouchArea { mouse-cursor: pointer; clicked => { root.record-shortcut(); } }
+                                    }
+                                    Button { y: (parent.height - self.height) / 2; text: root.recording-shortcut ? "Cancel" : "Change…"; clicked => { root.record-shortcut(); } }
+                                    Button { y: (parent.height - self.height) / 2; text: "Reset"; compact: true; clicked => { root.reset-shortcut(); } }
+                                    Rectangle { horizontal-stretch: 1; }
+                                }
+                                if root.shortcut-error != "": Text { text: root.shortcut-error; color: Theme.danger; wrap: word-wrap; font-size: Theme.font-sm; }
+                            }
+                            SettingsCard {
+                                title: "Where the shortcut opens Shift Paste";
+                                subtitle: root.pass-through-note;
+                                AppListEditor {
+                                    modes: ["All apps except…", "Only these apps…"];
+                                    mode <=> root.hotkey-mode;
+                                    apps: root.hotkey-apps;
+                                    empty-text: root.hotkey-mode == 0 ? "No exceptions: the shortcut works in every app." : "Add the apps where the shortcut should open Shift Paste.";
+                                    mode-changed(m) => { root.hotkey-mode-changed(m); }
+                                    add => { root.hotkey-add(); }
+                                    remove(i) => { root.hotkey-remove(i); }
+                                }
+                            }
+                        }
+
+                        if root.page == 2: VerticalLayout {
+                            spacing: 16px;
+                            Text { text: "History"; font-size: Theme.font-2xl; font-weight: 700; color: Theme.text; }
+                            SettingsCard {
+                                title: "How much to keep";
+                                subtitle: root.history-summary;
+                                HorizontalLayout {
+                                    spacing: 16px;
+                                    VerticalLayout {
+                                        spacing: 6px;
+                                        Text { text: "Keep up to"; font-size: Theme.font-sm; color: Theme.text-subtle; }
+                                        ComboBox {
+                                            model: root.max-items-options;
+                                            current-index <=> root.max-items-index;
+                                            selected => { root.changed-history(); }
+                                        }
+                                    }
+                                    VerticalLayout {
+                                        spacing: 6px;
+                                        Text { text: "Delete items older than"; font-size: Theme.font-sm; color: Theme.text-subtle; }
+                                        ComboBox {
+                                            model: root.max-age-options;
+                                            current-index <=> root.max-age-index;
+                                            selected => { root.changed-history(); }
+                                        }
+                                    }
+                                    Rectangle { horizontal-stretch: 1; }
+                                }
+                                Text { text: "Snippets in your collections are never deleted automatically."; font-size: Theme.font-sm; color: Theme.text-subtle; wrap: word-wrap; }
+                            }
+                            SettingsCard {
+                                Toggle {
+                                    text: "Keep formatting (HTML and RTF)";
+                                    description: "Paste rich text with its formatting; ⇧ Enter still pastes plain text. Uses more space.";
+                                    checked <=> root.keep-formatting;
+                                    toggled => { root.changed-history(); }
+                                }
+                            }
+                            SettingsCard {
+                                title: "Clear history";
+                                subtitle: "Removes every clipboard history item. Collections are kept.";
+                                HorizontalLayout { alignment: start; Button { text: "Clear history…"; danger: true; icon: Icons.trash; has-icon: true; clicked => { root.clear-history(); } } }
+                            }
+                        }
+
+                        if root.page == 3: VerticalLayout {
+                            spacing: 16px;
+                            Text { text: "Privacy"; font-size: Theme.font-2xl; font-weight: 700; color: Theme.text; }
+                            SettingsCard {
+                                Toggle {
+                                    text: "Skip passwords copied from password managers";
+                                    description: "Password managers mark secrets as “don't record”. Shift Paste honours that mark.";
+                                    checked <=> root.honour-password-flags;
+                                    toggled => { root.changed-privacy(); }
+                                }
+                                Divider { }
+                                Toggle {
+                                    text: "Pause recording";
+                                    description: "New copies aren't saved until you turn this off. Also in the tray menu.";
+                                    checked <=> root.recording-paused;
+                                    toggled => { root.changed-privacy(); }
+                                }
+                            }
+                            SettingsCard {
+                                title: "Which apps' copies are recorded";
+                                subtitle: root.platform-note;
+                                AppListEditor {
+                                    modes: ["All apps except…", "Only these apps…"];
+                                    mode <=> root.capture-mode;
+                                    apps: root.capture-apps;
+                                    empty-text: root.capture-mode == 0 ? "Copies from every app are recorded." : "Nothing is recorded until you add apps here.";
+                                    mode-changed(m) => { root.capture-mode-changed(m); }
+                                    add => { root.capture-add(); }
+                                    remove(i) => { root.capture-remove(i); }
+                                }
+                            }
+                            Text { text: "Shift Paste works fully offline: nothing you copy ever leaves this computer."; font-size: Theme.font-sm; color: Theme.text-subtle; wrap: word-wrap; }
+                        }
+
+                        if root.page == 4: VerticalLayout {
+                            spacing: 16px;
+                            Text { text: "Data"; font-size: Theme.font-2xl; font-weight: 700; color: Theme.text; }
+                            SettingsCard {
+                                title: root.portable ? "Data folder (portable mode)" : "Data folder";
+                                subtitle: root.portable ? "Your data is stored next to the app, so it travels with it." : "Your history, collections and settings are stored here.";
+                                Rectangle {
+                                    height: 36px;
+                                    border-radius: Theme.radius-md;
+                                    background: Theme.surface;
+                                    Text { x: 12px; width: parent.width - 24px; text: root.data-folder; color: Theme.text-muted; vertical-alignment: center; overflow: elide; font-size: Theme.font-sm; }
+                                }
+                                HorizontalLayout { alignment: start; Button { text: "Open folder"; icon: Icons.external; has-icon: true; clicked => { root.open-data-folder(); } } }
+                            }
+                            SettingsCard {
+                                title: "Back up your collections";
+                                subtitle: "Saves every collection into one Excel file (a sheet each). Importing that file restores them.";
+                                HorizontalLayout { alignment: start; Button { text: "Export all collections…"; icon: Icons.export; has-icon: true; clicked => { root.export-all(); } } }
+                            }
+                        }
+
+                        if root.page == 5: VerticalLayout {
+                            spacing: 16px;
+                            HorizontalLayout {
+                                spacing: 14px;
+                                Image { source: Icons.logo; width: 56px; height: 56px; }
+                                VerticalLayout {
+                                    alignment: center;
+                                    Text { text: "Shift Paste"; font-size: Theme.font-2xl; font-weight: 700; color: Theme.text; }
+                                    Text { text: "Version " + root.version; color: Theme.text-subtle; }
+                                }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+                            Text { text: "Clipboard history and snippet collections, one keystroke away. Free and open source under the MIT license."; wrap: word-wrap; color: Theme.text-muted; }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                alignment: start;
+                                Button { text: "Website & source"; icon: Icons.external; has-icon: true; clicked => { root.open-link("https://github.com/infinityhardik/shiftPaste"); } }
+                            }
+                            AboutSlint { }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---------------------------------------------------------- app picker
+        if root.picker-open: Rectangle {
+            background: Theme.scrim;
+            TouchArea { }
+            Card {
+                width: min(480px, parent.width - 40px);
+                height: min(520px, parent.height - 40px);
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 12px;
+                    Text { text: root.picker-title; font-size: Theme.font-lg; font-weight: 700; color: Theme.text; }
+                    Segmented {
+                        options: ["Popular apps", "Running now", "Browse…"];
+                        current <=> root.picker-tab;
+                        changed(i) => { root.picker-tab-changed(i); }
+                    }
+                    Rectangle {
+                        height: 34px;
+                        border-radius: Theme.radius-md;
+                        background: Theme.surface;
+                        border-width: 1px;
+                        border-color: pick-filter.has-focus ? Theme.accent : Theme.border;
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            spacing: 8px;
+                            Icon { y: (parent.height - self.height) / 2; source: Icons.search; size: 14px; }
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                pick-filter := TextInput {
+                                    width: 100%;
+                                    height: 100%;
+                                    text <=> root.picker-filter;
+                                    vertical-alignment: center;
+                                    single-line: true;
+                                    color: Theme.text;
+                                    accessible-role: text-input;
+                                    accessible-label: "Filter apps";
+                                    edited => { root.picker-filter-edited(self.text); }
+                                }
+                                if root.picker-filter == "": Text { text: "Filter apps"; color: Theme.text-faint; vertical-alignment: center; height: parent.height; x: 0; }
+                            }
+                        }
+                    }
+                    Rectangle {
+                        vertical-stretch: 1;
+                        border-radius: Theme.radius-md;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        ListView {
+                            for r[i] in root.picker-rows: Rectangle {
+                                height: r.section ? 30px : 38px;
+                                if r.section: SectionLabel { x: 12px; y: 10px; text: r.label; }
+                                if !r.section: Rectangle {
+                                    background: pick-touch.has-hover ? Theme.hover : transparent;
+                                    accessible-role: checkbox;
+                                    accessible-label: r.label;
+                                    accessible-checked: r.checked;
+                                    HorizontalLayout {
+                                        padding-left: 12px;
+                                        padding-right: 12px;
+                                        spacing: 10px;
+                                        Rectangle {
+                                            width: 18px;
+                                            height: 18px;
+                                            y: (parent.height - self.height) / 2;
+                                            border-radius: 4px;
+                                            background: r.checked ? Theme.accent : Theme.bg;
+                                            border-width: r.checked ? 0 : 1.5px;
+                                            border-color: Theme.border-strong;
+                                            if r.checked: Icon { source: Icons.check; size: 13px; tint: Theme.on-accent; }
+                                        }
+                                        Text { text: r.label; color: Theme.text; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                                        if r.detail != "": Text { text: r.detail; color: Theme.text-faint; font-size: Theme.font-xs; vertical-alignment: center; }
+                                    }
+                                    pick-touch := TouchArea { mouse-cursor: pointer; clicked => { root.picker-toggled(i); } }
+                                }
+                            }
+                        }
+                        if root.picker-tab == 2: VerticalLayout {
+                            alignment: center;
+                            spacing: 10px;
+                            padding: 20px;
+                            Text { text: "Choose an app's program file (.exe on Windows, .app on macOS)."; wrap: word-wrap; horizontal-alignment: center; color: Theme.text-muted; }
+                            HorizontalLayout { alignment: center; Button { text: "Browse…"; clicked => { root.picker-browse(); } } }
+                        }
+                    }
+                    HorizontalLayout {
+                        alignment: end;
+                        Button { text: "Done"; primary: true; clicked => { root.picker-done(); } }
+                    }
+                }
+            }
+        }
+    }
+}
