@@ -27,6 +27,7 @@ Each item is a concrete rule the build is checked against, not a slogan.
 | **Robustness** | **Never lose data:** every change is a SQLite transaction; `settings.toml` is written to a temp file then renamed. A corrupt database is backed up and recreated with a notice, never silently wiped. Clipboard "busy" errors retry with backoff. Worker-thread panics are caught and logged, and the tray app keeps running. If the hotkey is already taken, a clear message offers to record a different one. One instance only. |
 | **UX appropriateness** | Looks native on each OS (Fluent on Windows, Cupertino on macOS). Uses platform conventions (Cmd on macOS, menu-bar app with no Dock icon). Follows OS light/dark mode and per-monitor DPI scaling. |
 | **Accessibility** | Screen-reader labels via AccessKit (built into Slint), full keyboard navigation, visible focus, readable contrast in both themes. |
+| **Privacy** | 100% offline: the app never opens a network connection and has no telemetry. |
 | **Paste reliability** | Pastes into the window you came from, even when opened from the tray. Uses the right paste keystroke per app (§2.3). Never re-records its own paste as a new copy. |
 
 ---
@@ -49,7 +50,7 @@ Each item is a concrete rule the build is checked against, not a slogan.
 | 12 | Popup extras | **Preview pane** · **Paste as plain text** (Shift+Enter) · **Item actions** (save / edit / delete). No Ctrl+1…9 quick paste |
 | 13 | UI toolkit | **Slint** |
 | 14 | Linux | **Full support on X11; best-effort on Wayland** |
-| 15 | Hotkey | **Standard OS hotkey API** (no low-level keyboard hook) |
+| 15 | Hotkey | **Standard OS hotkey API** (no low-level keyboard hook) **with pass-through**: in an excluded app the keystroke is re-sent to that app, so its own Ctrl+Shift+V still works (§2.6) |
 | 16 | Privacy | **App lists for capture** · **pause recording** · **"all except" or "only these apps" modes** |
 | 16b | Password-manager "don't record" flags | **Honoured, as a setting** (on by default **[default]**) |
 | 16c | What the app lists control | **Capture and hotkey separately**, each with its own mode and list |
@@ -61,15 +62,31 @@ Each item is a concrete rule the build is checked against, not a slogan.
 | 20 | Release plan | **One big release** (v2.0.0) when everything here is done |
 | 21 | Clicking a popup row | **Single click pastes**, as today |
 | 22 | Language | **Rust**, confirmed after a side-by-side memory measurement (§6.1) |
+| 23 | Adding apps to lists | **App picker** with built-in **Popular apps** presets (no typing), running apps, or Browse… (§2.6) |
+| 24 | Preset defaults | Hotkey list: **nothing pre-ticked**. Capture list: **password managers pre-ticked** |
+| 25 | Favorites | **★ Favorites appear at the top** of the popup before you type |
+| 26 | Paste transforms | **Alt+Enter menu**: UPPER / lower / Title case, trimmed, single line |
+| 27 | Multi-paste | **Paste several items at once** (Ctrl+click to tick, joined by new lines) |
+| 28 | Popup size | **Resizable**, size remembered |
+| 29 | Portable mode | The portable build keeps its data **next to the executable** |
 
 Not chosen (so out of scope for 2.0):
 - image/file capture
 - database encryption
 - signed macOS builds
 - `.deb`/`.rpm`
-- auto-update
+- auto-update and "check for updates" (the app stays fully offline)
 - quick paste by number
 - importing data from 1.x
+- automatic backups ("Export all collections → one .xlsx" is the manual backup)
+- placeholders in snippets (`{date}`, fill-in fields)
+- per-snippet hotkeys
+- "copy diagnostics" button
+- translations (English only)
+
+Deliberately left out:
+- **text expansion** (type `;addr` to expand): it needs a system-wide keyboard hook, which decision 15 rules out;
+- **cloud sync**: SQLite files in OneDrive/Dropbox folders get corrupted. Export/import covers moving data between machines.
 
 ---
 
@@ -95,7 +112,9 @@ Not chosen (so out of scope for 2.0):
 ### 2.3 Popup
 - Opens at the **mouse cursor, on the monitor the cursor is on** **[default]**, flipping above the cursor near the bottom edge.
 - It is frameless and always on top. It closes on `Esc` or when it loses focus.
-- **Empty query:** shows the most recent history items.
+- **Empty query:** shows **★ favorites first**, then the most recent history items.
+  - Favorites are ordered most-recently-used first.
+  - If there are more than 10, the 10th row is "Show all favorites…".
 - **Typing:** one **merged, ranked list** of history and collection snippets. Each row shows a badge: `📋 History · 2m ago` or `📁 Work · Bank IFSC`.
 - **Filters:**
   - `@work` limits results to the Work collection. `@work` with nothing else lists that collection in its manual order.
@@ -111,9 +130,17 @@ Not chosen (so out of scope for 2.0):
   | `Ctrl+S` | save the selected history item to a collection (asks which) |
   | `Ctrl+E` | open the item in the editor |
   | `Delete` | remove the selected history item |
+  | `Alt+Enter` | **paste transforms** menu: UPPERCASE · lowercase · Title Case · Trimmed · Single line (Option+Enter on macOS) |
+  | `Ctrl+D` | ★ star/unstar a snippet. On a history item, saves it to a "Favorites" collection (created on first use) and stars it |
+  | `Ctrl+Space` / `Ctrl+click` | add or remove the item from a **multi-selection** (a tick appears). `Enter` then pastes all ticked items, one per line, in the order ticked |
+
+- **Transforms with a multi-selection:** the Alt+Enter menu also offers joining with commas, spaces or **tabs**. Tabs fill neighbouring Excel cells in one paste.
 
   On macOS, Cmd replaces Ctrl.
-- **Mouse:** hovering highlights a row; a **single click pastes it**, as today.
+- **Mouse:** hovering highlights a row; a **single click pastes it**, as today. `Ctrl+click` adds it to the multi-selection instead.
+- **Resizable:** drag any edge or corner.
+  - The size is remembered; the minimum is 360×300.
+  - Settings has "Reset popup size".
 - **Paste keystroke per app:**
   - `Ctrl+V` is the default (`Cmd+V` on macOS).
   - Linux terminals (GNOME Terminal, Konsole, Alacritty, kitty, xterm, …) get `Ctrl+Shift+V`, because `Ctrl+V` doesn't paste there.
@@ -161,23 +188,50 @@ List + detail layout:
 - **Undo/redo:** `Ctrl+Z` / `Ctrl+Y` (`Cmd+Z` / `Cmd+Shift+Z` on macOS) for every editor change, including deletes and moves. The undo stack lasts for the session.
 
 ### 2.6 App lists (capture and hotkey)
-There are two independent settings, each with a **mode** and a **list**:
+There are two independent settings. Each has a **mode** and **two separate lists**, one per mode. Switching mode never flips a list's meaning, so password managers can't accidentally become the *only* apps recorded.
 
-| Setting | Mode "All apps except…" | Mode "Only these apps…" |
+| Setting | Mode "All apps except…" (default) | Mode "Only these apps…" |
 |---|---|---|
 | **Clipboard capture** | Record copies from every app but those listed | Record only copies made while a listed app is in front |
 | **Popup hotkey** | Hotkey opens the popup everywhere except listed apps | Hotkey opens the popup only in listed apps |
 
-- **App identity:**
-  - Windows: executable name (`KeePassXC.exe`)
-  - macOS: bundle ID (`com.apple.Safari`), shown with the app name
-  - Linux X11: `WM_CLASS` / process name
-- **"Add app…"** picks from the apps currently running, and names can also be typed in.
+**Hotkey pass-through (decision 15).** When the hotkey is pressed somewhere it shouldn't open the popup (an excluded app, or outside the "only these" list), Shift Paste:
+1. briefly releases its hotkey,
+2. re-sends the same key combination to the app in front (only the keys you aren't already holding), and
+3. takes the hotkey back within ~50 ms.
+
+The app then does its own Ctrl+Shift+V (e.g. Chrome's paste-as-plain-text) as if Shift Paste weren't running. This uses the same keystroke sending as auto-paste, so there are no keyboard hooks:
+- **Windows:** `SendInput`.
+- **macOS:** `CGEventPost`, which needs the Accessibility permission (already needed for auto-paste). Without it the keystroke is swallowed and Settings says why.
+- **Linux X11:** XTest.
+- **Wayland:** not possible; the keystroke is swallowed.
+
+**Adding apps: no typing needed.** "Add app…" opens a picker with three tabs:
+1. **Popular apps:** a built-in checklist grouped by category (table below), showing only apps for the current OS. Each entry covers all of an app's identifiers, so one tick is enough.
+2. **Running apps:** pick from what's open right now (name and icon).
+3. **Browse…:** choose an `.exe`, `.app` or binary. Typing a name stays available as a fallback.
+
+**Defaults:**
+- Hotkey "except" list: **nothing ticked**. Shift Paste works everywhere on day one; excluding an app is one click.
+- Capture "except" list: **Password managers group ticked**. This adds to the "don't record" flag setting (§4.3).
+
+**Built-in presets.** Identifiers are checked on real machines during the build, and wrong ones are fixed before release.
+
+| Group | Apps | Example identifiers (Windows exe · macOS bundle ID · Linux WM_CLASS) |
+|---|---|---|
+| Office | Word, Excel, PowerPoint, Outlook, OneNote, LibreOffice | `WINWORD.EXE` `EXCEL.EXE` `POWERPNT.EXE` `OUTLOOK.EXE` `olk.exe` `ONENOTE.EXE` · `com.microsoft.Word` `com.microsoft.Excel` `com.microsoft.Powerpoint` `com.microsoft.Outlook` · `libreoffice` `soffice` |
+| Terminals | Windows Terminal, PowerShell, Command Prompt, macOS Terminal, iTerm2, GNOME Terminal, Konsole, Xfce Terminal, Alacritty, kitty, WezTerm, xterm | `WindowsTerminal.exe` `powershell.exe` `pwsh.exe` `cmd.exe` · `com.apple.Terminal` `com.googlecode.iterm2` · `gnome-terminal-server` `konsole` `xfce4-terminal` `Alacritty` `kitty` `org.wezfurlong.wezterm` `xterm` |
+| Code editors | VS Code | `Code.exe` · `com.microsoft.VSCode` · `code` |
+| Browsers | Chrome, Edge, Firefox, Safari, Brave | `chrome.exe` `msedge.exe` `firefox.exe` `brave.exe` · `com.google.Chrome` `com.microsoft.edgemac` `org.mozilla.firefox` `com.apple.Safari` · `google-chrome` `firefox` `brave-browser` |
+| Chat | Slack, Microsoft Teams, Discord | `slack.exe` `ms-teams.exe` `Discord.exe` · `com.tinyspeck.slackmacgap` · `slack` `discord` |
+| Design | Photoshop | `Photoshop.exe` · `com.adobe.Photoshop` |
+| Password managers *(capture list, pre-ticked)* | KeePass, KeePassXC, 1Password, Bitwarden, LastPass, Dashlane, Keeper, NordPass, Enpass, RoboForm, Proton Pass | `KeePass.exe` `KeePassXC.exe` `1Password.exe` `Bitwarden.exe` … · `org.keepassxc.keepassxc` … · `keepassxc` `1password` `bitwarden` |
+
+- **Matching:** case-insensitive, on the exe name (Windows), bundle ID (macOS) or WM_CLASS / process name (Linux X11).
 - **Wayland:** the foreground app usually can't be detected.
   - In "All except" mode the lists are not applied.
   - In "Only these" mode, capture and the hotkey stay off for unknown apps (fail safe).
   - Settings shows a note explaining this.
-- **Hotkey caveat:** the standard hotkey API reserves the key combination system-wide. Excluded apps don't open the popup, but they also don't receive the keystroke (same as today, by decision 15).
 
 ### 2.7 Import (Excel and CSV)
 - **Formats:** `.xlsx`, `.xlsm`, `.xls`, `.xlsb`, `.ods` (via `calamine`), and `.csv` / `.tsv` / `.txt` (via `csv`).
@@ -219,13 +273,15 @@ Left-click opens the popup. Before the popup opens, the app remembers the *previ
 | General | Launch at login | On |
 | | Theme: System / Light / Dark | System **[default]** |
 | Hotkey | Shortcut (key-recorder field, shows a conflict error if registration fails) | `Ctrl+Shift+V` / `Cmd+Shift+V` |
-| | Hotkey app list (mode + list) | All except, empty |
+| | Hotkey app lists (mode + separate "except" / "only" lists, via the app picker) | All except, nothing ticked |
+| | Paste keystroke per app | Built-in rules (Linux terminals → Ctrl+Shift+V) |
+| Popup | Reset popup size (button) | — |
 | History | Count limit · Age limit | 500 · 90 days |
 | | Keep formatting (HTML/RTF) | Off |
 | Privacy | Honour password-manager "don't record" flags | On |
-| | Capture app list (mode + list) | All except, empty |
+| | Capture app lists (same picker) | All except, Password managers ticked |
 | | Pause recording | Off |
-| Data | Data folder location (read-only) with an "Open folder" button | — |
+| Data | Data folder location (read-only) with an "Open folder" button; shows "Portable mode" when active | — |
 
 - Settings are stored in `settings.toml` in the config folder. **[default]** It is human-readable and easy to back up.
 - Changes apply immediately: there is no Save/Cancel mismatch like today.
@@ -283,7 +339,7 @@ legacy/        Python 1.x — removed when 2.0 is done
 ```
 collections (id, name UNIQUE, sort_order, created_at, updated_at)
 snippets    (id, collection_id → collections ON DELETE CASCADE,
-             title, content, notes, sort_order,
+             title, content, notes, sort_order, starred_at NULL (★ favorite),
              use_count, last_used_at, created_at, updated_at)
 tags        (id, name UNIQUE COLLATE NOCASE)
 snippet_tags(snippet_id → snippets CASCADE, tag_id → tags CASCADE, PRIMARY KEY both)
@@ -298,6 +354,10 @@ history     (id, content, content_hash UNIQUE, html NULL, rtf NULL,
 - Windows: `%APPDATA%\infinityhardik\ShiftPaste\` (config) and `%LOCALAPPDATA%\infinityhardik\ShiftPaste\` (data, logs)
 - macOS: `~/Library/Application Support/com.infinityhardik.ShiftPaste/`
 - Linux: `~/.config/shiftpaste/` and `~/.local/share/shiftpaste/`
+- **Portable mode** (decision 29): if a folder named `ShiftPaste-data` exists next to the executable, config, data and logs all live there instead.
+  - The portable zip ships with that folder, so it's portable out of the box. The installed version has no such folder, so it uses the locations above.
+  - If the folder is read-only (e.g. a locked USB stick), the app says so and falls back to the normal location; it never fails silently.
+  - "Launch at login" warns when the executable is on a removable drive.
 
 ### 3.5 Process model
 - **One process, one UI thread.** The Slint event loop is the main thread.
@@ -338,7 +398,7 @@ history     (id, content, content_hash UNIQUE, html NULL, rtf NULL,
 
 - **CI** (every push), on Windows, macOS and Ubuntu: `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`.
 - **Release** (on tag `v*`), built by GitHub Actions and attached to a GitHub Release:
-  - **Windows:** an **NSIS installer that asks for admin (UAC)** and installs for all users into `Program Files\Shift Paste`, with a Start-menu entry, optional desktop shortcut and uninstaller. Plus a **portable `.exe`** (zip).
+  - **Windows:** an **NSIS installer that asks for admin (UAC)** and installs for all users into `Program Files\Shift Paste`, with a Start-menu entry, optional desktop shortcut and uninstaller. Plus a **portable `.exe`** (zip, including the `ShiftPaste-data` folder so it runs in portable mode).
     - Before installing or uninstalling, the installer closes a running Shift Paste.
     - Uninstalling keeps the user's data unless they tick "Also delete my data".
     - The "Launch Shift Paste" checkbox at the end starts the app **as the normal user, not as admin**. A program started from an admin installer would otherwise run with admin rights, and its data could land in the wrong user profile.
@@ -397,7 +457,9 @@ Caveats:
    - **The Accessibility permission resets after every update**, because the code signature changes. Users must re-tick Shift Paste in System Settings. Signing later fixes this.
 3. **Unsigned Windows binaries:** SmartScreen may warn ("More info → Run anyway") until the app builds reputation.
 4. **AppImage** needs FUSE 2 (`libfuse2`) on some newer distros.
-5. **The hotkey is reserved system-wide** (decision 15). Excluded apps don't receive `Ctrl+Shift+V`, which is "paste as plain text" in browsers and Slack, and "paste" in Linux terminals. **Open question:** whether to add "pass-through", where Shift Paste re-sends the keystroke to excluded apps.
+5. **Hotkey pass-through** (decision 15) re-sends the keystroke to excluded apps.
+   - It isn't possible on Wayland, and on macOS it needs the Accessibility permission.
+   - Where it can't work, excluded apps don't receive `Ctrl+Shift+V`.
 6. **No migration from 1.x** (decision 17). Users re-import their Excel files with the new importer.
 
 ---
@@ -407,7 +469,7 @@ Caveats:
 1. Workspace and CI skeleton, `core` crate: DB, models, settings, search, with unit tests.
 2. `core` import/export (Excel + CSV, header detection, wizard back-end), round-trip tests.
 3. `platform` on Windows: clipboard events + flags, foreground app, paste, hotkey, autostart.
-4. Slint popup + tray + single instance, end-to-end on Windows.
-5. Slint editor (list + detail, history tab, undo/redo, drag reorder), import wizard, settings.
+4. Slint popup (search, preview, favorites, transforms, multi-paste, resizing), tray, single instance and hotkey pass-through, end-to-end on Windows.
+5. Slint editor (list + detail, history tab, undo/redo, drag reorder, ★), import wizard, settings with the app picker and presets, portable mode.
 6. `platform` on macOS and Linux X11, then Wayland best-effort.
 7. Packaging workflows, memory/speed measurement on all three OSes, docs, remove `legacy/` and `dist/`, tag **v2.0.0**.
