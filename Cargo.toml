@@ -8,7 +8,7 @@ edition = "2021"
 license = "MIT"
 authors = ["InfinityHardik"]
 repository = "https://github.com/infinityhardik/shiftPaste"
-rust-version = "1.85"
+rust-version = "1.92"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "warn"

@@ -1,5 +1,6 @@
 [package]
 name = "shiftpaste"
+description = "Shift Paste: clipboard history and snippet collections"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -7,7 +8,24 @@ authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[lib]
+name = "shiftpaste_app"
+path = "src/lib.rs"
+
+[[bin]]
+name = "shiftpaste"
+path = "src/main.rs"
+
 [dependencies]
+shiftpaste-core = { path = "../core" }
+shiftpaste-platform = { path = "../platform" }
+slint = { version = "1.18.1", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-software", "accessibility"] }
+
+[build-dependencies]
+slint-build = "1.18.1"
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+png = "0.18.1"

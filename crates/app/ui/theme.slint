@@ -1,0 +1,94 @@
+// Design tokens: one place for colours, type, spacing and icons.
+// `dark` is set from Rust (follows the OS, or the user's Light/Dark choice).
+
+export global Theme {
+    in-out property <bool> dark: false;
+
+    // Neutrals
+    out property <color> bg: dark ? #1d1d20 : #ffffff;
+    out property <color> surface: dark ? #242428 : #f7f7f8;
+    out property <color> surface-2: dark ? #2d2d32 : #efeff1;
+    out property <color> raised: dark ? #2a2a2f : #ffffff;
+    out property <color> hover: dark ? #ffffff10 : #0000000a;
+    out property <color> pressed: dark ? #ffffff1a : #00000014;
+    out property <color> border: dark ? #ffffff17 : #e5e5e8;
+    out property <color> border-strong: dark ? #ffffff2b : #d4d4d8;
+    out property <color> text: dark ? #f2f2f3 : #18181b;
+    out property <color> text-muted: dark ? #b6b6bd : #4f4f57;
+    out property <color> text-subtle: dark ? #8f8f98 : #71717a;
+    out property <color> text-faint: dark ? #65656d : #a1a1aa;
+
+    // Accent and status
+    out property <color> accent: dark ? #7aa7ff : #2563eb;
+    out property <color> accent-hover: dark ? #93b8ff : #1d4ed8;
+    out property <color> accent-soft: dark ? #7aa7ff24 : #2563eb12;
+    out property <color> accent-soft-strong: dark ? #7aa7ff38 : #2563eb21;
+    out property <color> on-accent: #ffffff;
+    out property <color> star: dark ? #fbbf24 : #f59e0b;
+    out property <color> danger: dark ? #ff7b7b : #dc2626;
+    out property <color> danger-soft: dark ? #ff7b7b22 : #dc262612;
+    out property <color> success: dark ? #5ee08a : #16a34a;
+    out property <color> warning-soft: dark ? #fbbf2420 : #f59e0b17;
+    out property <color> shadow: dark ? #00000099 : #00000033;
+    out property <color> scrim: dark ? #00000066 : #00000026;
+
+    // Type scale
+    out property <length> font-xs: 11px;
+    out property <length> font-sm: 12px;
+    out property <length> font-md: 13px;
+    out property <length> font-lg: 15px;
+    out property <length> font-xl: 18px;
+    out property <length> font-2xl: 22px;
+
+    // Shape and spacing
+    out property <length> radius-sm: 5px;
+    out property <length> radius-md: 8px;
+    out property <length> radius-lg: 12px;
+    out property <length> sp-1: 4px;
+    out property <length> sp-2: 8px;
+    out property <length> sp-3: 12px;
+    out property <length> sp-4: 16px;
+    out property <length> sp-5: 20px;
+    out property <length> sp-6: 24px;
+
+    // Motion
+    out property <duration> fast: 90ms;
+    out property <duration> normal: 160ms;
+}
+
+export global Icons {
+    out property <image> search: @image-url("icons/search.svg");
+    out property <image> star: @image-url("icons/star.svg");
+    out property <image> star-filled: @image-url("icons/star-filled.svg");
+    out property <image> clipboard: @image-url("icons/clipboard.svg");
+    out property <image> folder: @image-url("icons/folder.svg");
+    out property <image> sliders: @image-url("icons/sliders.svg");
+    out property <image> plus: @image-url("icons/plus.svg");
+    out property <image> trash: @image-url("icons/trash.svg");
+    out property <image> edit: @image-url("icons/edit.svg");
+    out property <image> close: @image-url("icons/close.svg");
+    out property <image> check: @image-url("icons/check.svg");
+    out property <image> chevron-right: @image-url("icons/chevron-right.svg");
+    out property <image> chevron-down: @image-url("icons/chevron-down.svg");
+    out property <image> import: @image-url("icons/import.svg");
+    out property <image> export: @image-url("icons/export.svg");
+    out property <image> undo: @image-url("icons/undo.svg");
+    out property <image> redo: @image-url("icons/redo.svg");
+    out property <image> eye: @image-url("icons/eye.svg");
+    out property <image> sparkles: @image-url("icons/sparkles.svg");
+    out property <image> inbox: @image-url("icons/inbox.svg");
+    out property <image> info: @image-url("icons/info.svg");
+    out property <image> pause: @image-url("icons/pause.svg");
+    out property <image> clock: @image-url("icons/clock.svg");
+    out property <image> tag: @image-url("icons/tag.svg");
+    out property <image> file: @image-url("icons/file.svg");
+    out property <image> copy: @image-url("icons/copy.svg");
+    out property <image> keyboard: @image-url("icons/keyboard.svg");
+    out property <image> grip: @image-url("icons/grip.svg");
+    out property <image> rich: @image-url("icons/rich.svg");
+    out property <image> shield: @image-url("icons/shield.svg");
+    out property <image> apps: @image-url("icons/apps.svg");
+    out property <image> database: @image-url("icons/database.svg");
+    out property <image> external: @image-url("icons/external.svg");
+    out property <image> logo: @image-url("icons/app-128.png");
+}

@@ -93,7 +93,6 @@ pub struct Paste {
     pub overrides: Vec<PasteOverride>,
 }
 
-
 impl Default for General {
     fn default() -> Self {
         General {

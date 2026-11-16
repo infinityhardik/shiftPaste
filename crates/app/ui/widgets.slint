@@ -1,0 +1,337 @@
+// Small reusable building blocks shared by every window.
+
+import { Theme, Icons } from "theme.slint";
+
+// Tinted line icon.
+export component Icon inherits Image {
+    in property <color> tint: Theme.text-subtle;
+    in property <length> size: 16px;
+    width: size;
+    height: size;
+    colorize: tint;
+    image-fit: contain;
+}
+
+// Square icon-only button with hover/pressed states and a tooltip-like label for accessibility.
+export component IconButton inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    in property <bool> enabled: true;
+    in property <bool> active: false;
+    in property <length> size: 30px;
+    in property <length> icon-size: 16px;
+    in property <color> tint: active ? Theme.accent : Theme.text-subtle;
+    callback clicked();
+
+    width: size;
+    height: size;
+    border-radius: Theme.radius-md;
+    background: !enabled ? transparent : touch.pressed ? Theme.pressed : (touch.has-hover || active) ? Theme.hover : transparent;
+    opacity: enabled ? 1 : 0.4;
+    accessible-role: button;
+    accessible-label: label;
+    accessible-enabled: enabled;
+    accessible-action-default => { clicked(); }
+
+    Icon {
+        source: icon;
+        size: icon-size;
+        tint: root.tint;
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+
+    animate background { duration: Theme.fast; }
+}
+
+// Text button. `primary` = filled accent; `danger` = red text; otherwise subtle.
+export component Button inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <bool> has-icon: false;
+    in property <bool> primary: false;
+    in property <bool> danger: false;
+    in property <bool> enabled: true;
+    in property <bool> compact: false;
+    callback clicked();
+
+    height: compact ? 26px : 32px;
+    min-width: compact ? 0 : 72px;
+    border-radius: Theme.radius-md;
+    background: primary
+        ? (!enabled ? Theme.accent.with-alpha(0.45) : touch.pressed ? Theme.accent-hover.darker(0.1) : touch.has-hover ? Theme.accent-hover : Theme.accent)
+        : (touch.pressed ? Theme.pressed : touch.has-hover ? Theme.hover : (compact ? transparent : Theme.raised));
+    border-width: primary || compact ? 0 : 1px;
+    border-color: Theme.border-strong;
+    opacity: enabled || primary ? 1 : 0.5;
+    accessible-role: button;
+    accessible-label: text;
+    accessible-enabled: enabled;
+    accessible-action-default => { if enabled { clicked(); } }
+
+    HorizontalLayout {
+        padding-left: compact ? 8px : 14px;
+        padding-right: compact ? 8px : 14px;
+        spacing: 6px;
+        alignment: center;
+        if has-icon: Icon {
+            y: (parent.height - self.height) / 2;
+            source: icon;
+            size: 15px;
+            tint: primary ? Theme.on-accent : danger ? Theme.danger : Theme.text-muted;
+        }
+        Text {
+            text: root.text;
+            vertical-alignment: center;
+            font-size: Theme.font-md;
+            font-weight: primary ? 600 : 500;
+            color: primary ? Theme.on-accent : danger ? Theme.danger : Theme.text;
+        }
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+
+    animate background { duration: Theme.fast; }
+}
+
+// Keyboard shortcut cap, e.g. "↵" or "Ctrl".
+export component Kbd inherits Rectangle {
+    in property <string> text;
+    height: 18px;
+    min-width: 18px;
+    border-radius: 4px;
+    background: Theme.surface-2;
+    border-width: 1px;
+    border-color: Theme.border;
+    HorizontalLayout {
+        padding-left: 5px;
+        padding-right: 5px;
+        Text {
+            text: root.text;
+            font-size: Theme.font-xs;
+            font-weight: 600;
+            color: Theme.text-muted;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+        }
+    }
+}
+
+// "↵ Paste" style hint in footers.
+export component KeyHint inherits HorizontalLayout {
+    in property <string> key;
+    in property <string> action;
+    spacing: 5px;
+    alignment: start;
+    Kbd {
+        text: key;
+        y: (parent.height - self.height) / 2;
+    }
+    Text {
+        text: action;
+        font-size: Theme.font-xs;
+        color: Theme.text-subtle;
+        vertical-alignment: center;
+    }
+}
+
+// Small rounded label (collection name, tag, "Rich").
+export component Chip inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <bool> has-icon: false;
+    in property <color> fg: Theme.text-subtle;
+    in property <color> fill: Theme.surface-2;
+    in property <bool> removable: false;
+    callback remove();
+
+    height: 20px;
+    border-radius: 10px;
+    background: fill;
+    HorizontalLayout {
+        padding-left: has-icon ? 6px : 8px;
+        padding-right: removable ? 4px : 8px;
+        spacing: 4px;
+        if has-icon: Icon {
+            y: (parent.height - self.height) / 2;
+            source: icon;
+            size: 11px;
+            tint: fg;
+        }
+        Text {
+            text: root.text;
+            font-size: Theme.font-xs;
+            font-weight: 500;
+            color: fg;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+        if removable: Rectangle {
+            width: 14px;
+            height: 14px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 7px;
+            background: x-touch.has-hover ? Theme.pressed : transparent;
+            accessible-role: button;
+            accessible-label: "Remove " + root.text;
+            Icon { source: Icons.close; size: 9px; tint: fg; }
+            x-touch := TouchArea { mouse-cursor: pointer; clicked => { root.remove(); } }
+        }
+    }
+}
+
+// Uppercase section label inside lists ("FAVORITES", "RECENT").
+export component SectionLabel inherits Text {
+    font-size: Theme.font-xs;
+    font-weight: 600;
+    letter-spacing: 0.6px;
+    color: Theme.text-faint;
+    vertical-alignment: center;
+}
+
+export component Divider inherits Rectangle {
+    height: 1px;
+    background: Theme.border;
+}
+
+export component VDivider inherits Rectangle {
+    width: 1px;
+    background: Theme.border;
+}
+
+// Icon + title + message, centred; used for empty lists.
+export component EmptyState inherits VerticalLayout {
+    in property <image> icon: Icons.inbox;
+    in property <string> title;
+    in property <string> message;
+    alignment: center;
+    spacing: 6px;
+    padding: 24px;
+    Rectangle {
+        height: 56px;
+        Rectangle {
+            width: 48px;
+            height: 48px;
+            border-radius: 24px;
+            background: Theme.surface-2;
+            Icon { source: root.icon; size: 22px; tint: Theme.text-faint; }
+        }
+    }
+    Text {
+        text: root.title;
+        horizontal-alignment: center;
+        font-size: Theme.font-lg;
+        font-weight: 600;
+        color: Theme.text-muted;
+        wrap: word-wrap;
+    }
+    Text {
+        text: root.message;
+        horizontal-alignment: center;
+        font-size: Theme.font-md;
+        color: Theme.text-subtle;
+        wrap: word-wrap;
+    }
+}
+
+// Rounded floating panel with a soft shadow (menus, dialogs inside windows).
+export component Card inherits Rectangle {
+    background: Theme.raised;
+    border-radius: Theme.radius-lg;
+    border-width: 1px;
+    border-color: Theme.border-strong;
+    drop-shadow-blur: 24px;
+    drop-shadow-offset-y: 8px;
+    drop-shadow-color: Theme.shadow;
+}
+
+// One row in a menu: icon, label, optional shortcut, highlighted when selected.
+export component MenuRow inherits Rectangle {
+    in property <string> text;
+    in property <string> shortcut;
+    in property <image> icon;
+    in property <bool> has-icon: false;
+    in property <bool> selected: false;
+    callback clicked();
+    callback hovered();
+
+    height: 32px;
+    border-radius: Theme.radius-sm;
+    background: selected ? Theme.accent-soft-strong : touch.has-hover ? Theme.hover : transparent;
+    accessible-role: list-item;
+    accessible-label: text;
+    accessible-item-selected: selected;
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 8px;
+        if has-icon: Icon {
+            y: (parent.height - self.height) / 2;
+            source: icon;
+            size: 15px;
+            tint: selected ? Theme.accent : Theme.text-subtle;
+        }
+        Text {
+            text: root.text;
+            font-size: Theme.font-md;
+            color: Theme.text;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+        if shortcut != "": Kbd {
+            y: (parent.height - self.height) / 2;
+            text: shortcut;
+        }
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+        moved => { root.hovered(); }
+    }
+}
+
+// Toast-like status message at the bottom of a window.
+export component Toast inherits Rectangle {
+    in property <string> text;
+    in property <string> action-text;
+    callback action();
+    height: 36px;
+    border-radius: Theme.radius-md;
+    background: Theme.dark ? #3a3a40 : #26262b;
+    drop-shadow-blur: 16px;
+    drop-shadow-offset-y: 4px;
+    drop-shadow-color: Theme.shadow;
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 6px;
+        spacing: 10px;
+        Text {
+            text: root.text;
+            color: #f4f4f5;
+            font-size: Theme.font-md;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+        if action-text != "": Rectangle {
+            width: action-label.preferred-width + 16px;
+            border-radius: Theme.radius-sm;
+            background: act-touch.has-hover ? #ffffff1f : transparent;
+            action-label := Text {
+                text: root.action-text;
+                color: #93b8ff;
+                font-weight: 600;
+                font-size: Theme.font-md;
+            }
+            act-touch := TouchArea { mouse-cursor: pointer; clicked => { root.action(); } }
+        }
+    }
+}
