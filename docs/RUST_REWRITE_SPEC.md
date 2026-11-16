@@ -339,10 +339,9 @@ legacy/        Python 1.x — removed when 2.0 is done
 ```
 collections (id, name UNIQUE, sort_order, created_at, updated_at)
 snippets    (id, collection_id → collections ON DELETE CASCADE,
-             title, content, notes, sort_order, starred_at NULL (★ favorite),
+             title, content, notes, tags (normalised, comma-separated),
+             sort_order, starred_at NULL (★ favorite),
              use_count, last_used_at, created_at, updated_at)
-tags        (id, name UNIQUE COLLATE NOCASE)
-snippet_tags(snippet_id → snippets CASCADE, tag_id → tags CASCADE, PRIMARY KEY both)
 history     (id, content, content_hash UNIQUE, html NULL, rtf NULL,
              source_app NULL, copy_count, first_copied_at, last_copied_at)
 ```
@@ -473,3 +472,58 @@ Caveats:
 5. Slint editor (list + detail, history tab, undo/redo, drag reorder, ★), import wizard, settings with the app picker and presets, portable mode.
 6. `platform` on macOS and Linux X11, then Wayland best-effort.
 7. Packaging workflows, memory/speed measurement on all three OSes, docs, remove `legacy/` and `dist/`, tag **v2.0.0**.
+
+---
+
+## 9. Implementation status (2026-11-16)
+
+### Done
+- **Workspace and CI**: fmt, clippy and tests on Windows, macOS and Linux.
+- **Core** (`crates/core`, 54 tests):
+  - Database: migrations, recovery from a damaged file, never-reused ids.
+  - History limits (count and age).
+  - Library with undo/redo and coalesced edits.
+  - Search: in-order matching, Unicode, filters, highlights. Worst case for 25,000 items is about 15–20 ms.
+  - Settings, presets and app filters.
+  - Excel/CSV import (one-click and wizard back end) and export, with round-trip tests.
+- **UI** (`crates/app/ui`): popup, editor, settings with app picker, import wizard, welcome card. Light and dark themes.
+- **Controllers**: every window is wired to the core. Undo toasts, autosave, pickers, export menu, shortcut recorder.
+- **Platform** (`crates/platform`):
+  - clipboard watch (counter-based on Windows/macOS) with "don't record" flags on Windows/macOS;
+  - foreground app;
+  - focus restore (Windows/macOS);
+  - paste keystrokes and hotkey pass-through;
+  - tray (GTK thread on Linux);
+  - launch at login;
+  - dialogs;
+  - single instance with `--toggle/--editor/--settings/--quit`;
+  - cursor position, popup clamped to the monitor;
+  - popup kept out of the Windows taskbar;
+  - log file.
+- **Verified**:
+  - The Linux build runs end to end under X11: capture, popup, live search, editor and IPC.
+  - Windows and macOS platform code type-checks.
+
+### Still to do before 2.0.0
+1. **Run and test on real Windows and macOS** (only type-checked so far). Measure memory against the §6 targets.
+2. **Popup polish**:
+   - resize handles for the frameless window;
+   - native rounded corners and shadow (Windows 11 DWM, macOS);
+   - remember the previous app when opened from the tray.
+3. **macOS**: menu-bar-only app (`LSUIElement`), and an Accessibility onboarding sheet.
+4. **Linux**:
+   - read `x-kde-passwordManagerHint`;
+   - Wayland GlobalShortcuts portal (today: bind `shiftpaste --toggle`);
+   - test Wayland clipboard watching.
+5. **Smaller items**:
+   - RTF capture (HTML is captured);
+   - UI for per-app paste keystroke overrides (the setting exists);
+   - Alt+↑/↓ keyboard reordering in the editor.
+6. **Packaging** (§5):
+   - NSIS installer with admin prompt, plus portable zip;
+   - universal unsigned `.dmg`;
+   - AppImage;
+   - release workflow.
+7. **Clean-up**:
+   - remove `legacy/` and `dist/`;
+   - verify the preset identifiers on real machines.

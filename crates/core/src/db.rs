@@ -339,6 +339,16 @@ impl Store {
         Ok(removed)
     }
 
+    /// Apps that history items were copied from, most recent first (for the app picker).
+    pub fn recent_source_apps(&self, limit: usize) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT source_app FROM history WHERE source_app IS NOT NULL AND source_app <> ''
+             GROUP BY source_app ORDER BY MAX(last_copied_at) DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map([limit as i64], |r| r.get(0))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
     /// Delete all history (collections are untouched). Returns how many were removed.
     pub fn clear_history(&self) -> Result<usize> {
         let n = self.conn.execute("DELETE FROM history", [])?;

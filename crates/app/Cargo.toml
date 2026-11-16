@@ -17,9 +17,12 @@ name = "shiftpaste"
 path = "src/main.rs"
 
 [dependencies]
+dark-light = "3.0.0"
 shiftpaste-core = { path = "../core" }
 shiftpaste-platform = { path = "../platform" }
-slint = { version = "1.18.1", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-software", "accessibility"] }
+slint = { version = "1.18.1", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-software", "accessibility", "unstable-winit-030"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
 [build-dependencies]
 slint-build = "1.18.1"

@@ -8,6 +8,32 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+arboard = { version = "3.7.0", default-features = false, features = ["wayland-data-control"] }
+auto-launch = "0.6.0"
+enigo = "0.6.1"
+global-hotkey = "0.10.0"
+interprocess = "2.4.8"
+open = "5.4.5"
+png = "0.18.1"
+rfd = "0.18.0"
+thiserror = "2.0.21"
+tracing = "0.1.44"
+tray-icon = "0.26.1"
 
 [lints]
 workspace = true
+
+[target."cfg(windows)".dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_DataExchange", "Win32_UI_WindowsAndMessaging", "Win32_Foundation", "Win32_Graphics_Gdi"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.5"
+objc2-app-kit = { version = "0.3.2", features = ["NSPasteboard", "NSRunningApplication", "NSWorkspace", "NSApplication", "NSEvent", "NSScreen", "NSResponder"] }
+objc2-foundation = { version = "0.3.2", features = ["NSString", "NSArray", "NSURL"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+x11rb = "0.13"
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+active-win-pos-rs = "0.11.0"
