@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 
-use shiftpaste_core::apps::{entry_label, AppFilter, FilterMode};
+use shiftpaste_core::apps::{entry_label, AppFilter, FilterMode, PasteKeys, PasteOverride};
 use shiftpaste_core::presets::{self, Group, Platform, PRESET_PREFIX};
 use shiftpaste_core::settings::{
     default_shortcut, Theme as ThemeSetting, DEFAULT_POPUP_HEIGHT, DEFAULT_POPUP_WIDTH,
@@ -12,8 +12,14 @@ use slint::platform::Key;
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
 use crate::app::{group, with_app, App};
-use crate::ui::{AppRow, PickRow, SettingsWindow, Theme};
+use crate::ui::{AppRow, PasteRow, PickRow, SettingsWindow, Theme};
 
+/// Order matches the Settings combo box: Ctrl+V, Ctrl+Shift+V, Shift+Insert.
+const PASTE_KEYS: [PasteKeys; 3] = [
+    PasteKeys::CtrlV,
+    PasteKeys::CtrlShiftV,
+    PasteKeys::ShiftInsert,
+];
 const MAX_ITEMS: [u32; 5] = [100, 500, 1_000, 5_000, 0];
 const MAX_AGE: [u32; 5] = [7, 30, 90, 365, 0];
 
@@ -21,6 +27,8 @@ const MAX_AGE: [u32; 5] = [7, 30, 90, 365, 0];
 enum Which {
     Hotkey,
     Capture,
+    /// Per-app paste keystrokes.
+    Paste,
 }
 
 pub struct PrefsCtl {
@@ -118,6 +126,31 @@ fn wire(app: &Rc<App>) {
     w.on_hotkey_remove(|i| with_prefs(|app, p| p.remove_entry(app, Which::Hotkey, i as usize)));
     w.on_capture_remove(|i| with_prefs(|app, p| p.remove_entry(app, Which::Capture, i as usize)));
     w.on_hotkey_add(|| with_prefs(|app, p| p.open_picker(app, Which::Hotkey)));
+    w.on_paste_add(|| with_prefs(|app, p| p.open_picker(app, Which::Paste)));
+    w.on_paste_remove(|i| {
+        with_prefs(|app, p| {
+            {
+                let mut s = app.settings.borrow_mut();
+                if (i as usize) < s.paste.overrides.len() {
+                    s.paste.overrides.remove(i as usize);
+                }
+            }
+            app.save_settings();
+            p.load_lists(app);
+        })
+    });
+    w.on_paste_keys_changed(|i, k| {
+        with_prefs(|app, p| {
+            {
+                let mut s = app.settings.borrow_mut();
+                if let Some(o) = s.paste.overrides.get_mut(i as usize) {
+                    o.keys = PASTE_KEYS[(k.max(0) as usize).min(PASTE_KEYS.len() - 1)];
+                }
+            }
+            app.save_settings();
+            p.load_lists(app);
+        })
+    });
     w.on_capture_add(|| with_prefs(|app, p| p.open_picker(app, Which::Capture)));
     w.on_changed_history(|| {
         with_prefs(|app, p| {
@@ -218,6 +251,7 @@ impl PrefsCtl {
         let s = app.settings.borrow();
         let w = &self.window;
         w.set_version(env!("CARGO_PKG_VERSION").into());
+        w.set_show_paste_keys(!cfg!(target_os = "macos"));
         w.set_launch_at_login(s.general.launch_at_login);
         w.set_theme_mode(match s.general.theme {
             ThemeSetting::System => 0,
@@ -273,13 +307,69 @@ impl PrefsCtl {
             .set_capture_mode(i32::from(s.privacy.capture.mode == FilterMode::Only));
         self.window.set_hotkey_apps(app_rows(&s.hotkey.apps));
         self.window.set_capture_apps(app_rows(&s.privacy.capture));
+        let rows: Vec<PasteRow> = s
+            .paste
+            .overrides
+            .iter()
+            .map(|o| PasteRow {
+                label: entry_label(&o.app).into(),
+                keys: PASTE_KEYS.iter().position(|k| *k == o.keys).unwrap_or(0) as i32,
+            })
+            .collect();
+        self.window
+            .set_paste_rows(ModelRc::new(VecModel::from(rows)));
     }
 
     fn filter_mut<'a>(app: &'a App, which: Which) -> std::cell::RefMut<'a, AppFilter> {
         std::cell::RefMut::map(app.settings.borrow_mut(), |s| match which {
-            Which::Hotkey => &mut s.hotkey.apps,
+            Which::Hotkey | Which::Paste => &mut s.hotkey.apps,
             Which::Capture => &mut s.privacy.capture,
         })
+    }
+
+    /// The entries a picker mode currently has ticked.
+    fn entries(app: &App, which: Which) -> Vec<String> {
+        match which {
+            Which::Paste => app
+                .settings
+                .borrow()
+                .paste
+                .overrides
+                .iter()
+                .map(|o| o.app.clone())
+                .collect(),
+            _ => Self::filter_mut(app, which).active_list().to_vec(),
+        }
+    }
+
+    /// Tick (`Some(true)`), untick (`Some(false)`) or toggle (`None`) an entry.
+    fn set_entry(app: &App, which: Which, entry: String, want: Option<bool>) {
+        if which == Which::Paste {
+            let mut s = app.settings.borrow_mut();
+            let list = &mut s.paste.overrides;
+            let pos = list.iter().position(|o| o.app.eq_ignore_ascii_case(&entry));
+            match (pos, want) {
+                (Some(i), None | Some(false)) => {
+                    list.remove(i);
+                }
+                (None, None | Some(true)) => list.push(PasteOverride {
+                    app: entry,
+                    keys: PasteKeys::CtrlShiftV,
+                }),
+                _ => {}
+            }
+            return;
+        }
+        let mut f = Self::filter_mut(app, which);
+        let list = f.active_list_mut();
+        let pos = list.iter().position(|e| e.eq_ignore_ascii_case(&entry));
+        match (pos, want) {
+            (Some(i), None | Some(false)) => {
+                list.remove(i);
+            }
+            (None, None | Some(true)) => list.push(entry),
+            _ => {}
+        }
     }
 
     fn remove_entry(&self, app: &App, which: Which, i: usize) {
@@ -298,13 +388,7 @@ impl PrefsCtl {
         let Some(which) = self.picking.get() else {
             return;
         };
-        {
-            let mut f = Self::filter_mut(app, which);
-            let list = f.active_list_mut();
-            if !list.iter().any(|e| e.eq_ignore_ascii_case(&entry)) {
-                list.push(entry);
-            }
-        }
+        Self::set_entry(app, which, entry, Some(true));
         app.save_settings();
         self.load_lists(app);
         self.build_picker(app);
@@ -315,12 +399,14 @@ impl PrefsCtl {
         let only = match which {
             Which::Hotkey => app.settings.borrow().hotkey.apps.mode == FilterMode::Only,
             Which::Capture => app.settings.borrow().privacy.capture.mode == FilterMode::Only,
+            Which::Paste => false,
         };
         let title = match (which, only) {
             (Which::Hotkey, false) => "Where shouldn't the shortcut open Shift Paste?",
             (Which::Hotkey, true) => "Where should the shortcut open Shift Paste?",
             (Which::Capture, false) => "Which apps' copies should not be recorded?",
             (Which::Capture, true) => "Which apps' copies should be recorded?",
+            (Which::Paste, _) => "Which apps need a different paste keystroke?",
         };
         self.window.set_picker_title(title.into());
         self.window.set_picker_tab(0);
@@ -333,7 +419,7 @@ impl PrefsCtl {
         let Some(which) = self.picking.get() else {
             return;
         };
-        let list: Vec<String> = Self::filter_mut(app, which).active_list().to_vec();
+        let list: Vec<String> = Self::entries(app, which);
         let filter = self.window.get_picker_filter().to_lowercase();
         let wanted = |name: &str| filter.is_empty() || name.to_lowercase().contains(&filter);
         let checked = |entry: &str| list.iter().any(|e| e.eq_ignore_ascii_case(entry));
@@ -463,16 +549,7 @@ impl PrefsCtl {
         else {
             return;
         };
-        {
-            let mut f = Self::filter_mut(app, which);
-            let list = f.active_list_mut();
-            match list.iter().position(|e| e.eq_ignore_ascii_case(&entry)) {
-                Some(pos) => {
-                    list.remove(pos);
-                }
-                None => list.push(entry),
-            }
-        }
+        Self::set_entry(app, which, entry, None);
         app.save_settings();
         self.load_lists(app);
         self.build_picker(app);

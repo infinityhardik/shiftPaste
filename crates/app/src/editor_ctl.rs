@@ -336,9 +336,9 @@ fn wire(app: &Rc<App>) {
         })
     });
     w.on_open_paste_permission(platform::permissions::open_paste_settings);
-    w.on_handle_key(|key, ctrl, shift, _alt| {
+    w.on_handle_key(|key, ctrl, shift, alt| {
         let mut handled = false;
-        with_ed(|app, ed| handled = ed.key(app, &key, ctrl, shift));
+        with_ed(|app, ed| handled = ed.key(app, &key, ctrl, shift, alt));
         handled
     });
     w.window().on_close_requested(|| {
@@ -1024,10 +1024,30 @@ impl EditorCtl {
         }
     }
 
-    fn key(&self, app: &App, key: &str, ctrl: bool, shift: bool) -> bool {
+    fn key(&self, app: &App, key: &str, ctrl: bool, shift: bool, alt: bool) -> bool {
         let Some(k) = key.chars().next() else {
             return false;
         };
+        // Alt+Up / Alt+Down: move the selected snippet (keyboard drag).
+        if alt && (k == char::from(Key::UpArrow) || k == char::from(Key::DownArrow)) {
+            let up = k == char::from(Key::UpArrow);
+            let movable = matches!(self.state.borrow().view, View::Collection(_))
+                && self.window.get_filter().is_empty();
+            let current = self.state.borrow().current;
+            if let (true, Some(i)) = (movable, current) {
+                let n = self.state.borrow().items.len();
+                let to = if up {
+                    i.checked_sub(1)
+                } else {
+                    (i + 1 < n).then_some(i + 1)
+                };
+                if let Some(to) = to {
+                    self.window.invoke_item_moved(i as i32, to as i32);
+                    self.select(app, to);
+                }
+            }
+            return true;
+        }
         if k == char::from(Key::Escape) {
             if self.window.get_menu_open() {
                 self.picker_chosen(app, -1);

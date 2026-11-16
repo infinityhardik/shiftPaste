@@ -5297,6 +5297,7 @@ dependencies = [
  "active-win-pos-rs",
  "arboard",
  "auto-launch",
+ "clipboard-win",
  "enigo",
  "global-hotkey",
  "gtk",

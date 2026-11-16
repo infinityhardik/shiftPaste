@@ -45,6 +45,13 @@ pub fn post(f: impl FnOnce(&Rc<App>) + Send + 'static) {
     let _ = slint::invoke_from_event_loop(move || with_app(f));
 }
 
+/// Formatted versions of a pasted item (only when pasting with formatting).
+#[derive(Default)]
+pub struct Formatting {
+    html: Option<String>,
+    rtf: Option<String>,
+}
+
 /// macOS manual resize in progress: (edge, cursor at start, size at start), physical px.
 type ResizeDrag = (i32, (i32, i32), (u32, u32));
 
@@ -93,7 +100,7 @@ pub struct App {
     pub tray: RefCell<Option<platform::tray::Tray>>,
     pub want_html: Arc<AtomicBool>,
     /// Text Shift Paste itself just put on the clipboard (not a new copy).
-    self_copy: RefCell<Option<String>>,
+    self_copy: RefCell<Option<(String, std::time::Instant)>>,
     watcher: RefCell<Option<platform::clipboard::Watcher>>,
     /// Shown once in the editor (e.g. "your settings file had an error").
     pub notice: RefCell<Option<String>>,
@@ -312,10 +319,16 @@ impl App {
 
     fn on_clipboard(self: &Rc<Self>, change: platform::clipboard::Change) {
         // Our own paste: it was already recorded as "used", not a new copy.
-        if self.self_copy.borrow().as_deref() == Some(change.text.as_str()) {
-            self.self_copy.borrow_mut().take();
+        // (The OS may report one paste as several changes, e.g. text then RTF.)
+        let ours = self
+            .self_copy
+            .borrow()
+            .as_ref()
+            .is_some_and(|(t, at)| *t == change.text && at.elapsed() < Duration::from_secs(3));
+        if ours {
             return;
         }
+        self.self_copy.borrow_mut().take();
         let (paused, honour, capture, limits, keep_html) = {
             let s = self.settings.borrow();
             (
@@ -336,7 +349,7 @@ impl App {
         let clip = NewClip {
             text: change.text,
             html: if keep_html { change.html } else { None },
-            rtf: None,
+            rtf: if keep_html { change.rtf } else { None },
             source_app: source.map(|s| s.display_name),
         };
         if let Err(e) = self.lib.borrow_mut().record_copy(&clip, limits) {
@@ -1170,24 +1183,28 @@ impl App {
             return;
         }
         let joiner = transform.map_or(Joiner::NewLine, |(_, j)| j);
-        let Some((mut text, html)) = self.collect_text(&hits, joiner) else {
+        let Some((mut text, fmt)) = self.collect_text(&hits, joiner) else {
             return;
         };
         if let Some((t, _)) = transform {
             text = t.apply(&text);
         }
-        let html = if plain || transform.is_some() || hits.len() > 1 {
-            None
+        let fmt = if plain || transform.is_some() || hits.len() > 1 {
+            Formatting::default()
         } else {
-            html
+            fmt
         };
-        self.paste_text(text, html, hits.iter().map(|h| (h.kind, h.id)).collect());
+        self.paste_text(text, fmt, hits.iter().map(|h| (h.kind, h.id)).collect());
     }
 
     fn activate_join(&self, joiner: Joiner) {
         let hits = self.hits_to_paste();
         if let Some((text, _)) = self.collect_text(&hits, joiner) {
-            self.paste_text(text, None, hits.iter().map(|h| (h.kind, h.id)).collect());
+            self.paste_text(
+                text,
+                Formatting::default(),
+                hits.iter().map(|h| (h.kind, h.id)).collect(),
+            );
         }
     }
 
@@ -1235,15 +1252,18 @@ impl App {
         self.current_hit().into_iter().collect()
     }
 
-    fn collect_text(&self, hits: &[Hit], joiner: Joiner) -> Option<(String, Option<String>)> {
+    fn collect_text(&self, hits: &[Hit], joiner: Joiner) -> Option<(String, Formatting)> {
         let lib = self.lib.borrow();
         let mut texts = Vec::new();
-        let mut html = None;
+        let mut fmt = Formatting::default();
         for h in hits {
             match h.kind {
                 Kind::History => {
                     let item = lib.history_item(h.id).ok()?;
-                    html = item.html.clone();
+                    fmt = Formatting {
+                        html: item.html.clone(),
+                        rtf: item.rtf.clone(),
+                    };
                     texts.push(item.content);
                 }
                 Kind::Snippet => texts.push(lib.snippet(h.id).ok()?.content),
@@ -1254,13 +1274,13 @@ impl App {
         } else {
             joiner.join(&texts)
         };
-        Some((text, html))
+        Some((text, fmt))
     }
 
     /// Put `text` on the clipboard, close the popup, give focus back and paste.
-    pub fn paste_text(&self, text: String, html: Option<String>, used: Vec<(Kind, Id)>) {
-        *self.self_copy.borrow_mut() = Some(text.clone());
-        if let Err(e) = platform::clipboard::write(&text, html.as_deref()) {
+    pub fn paste_text(&self, text: String, fmt: Formatting, used: Vec<(Kind, Id)>) {
+        *self.self_copy.borrow_mut() = Some((text.clone(), std::time::Instant::now()));
+        if let Err(e) = platform::clipboard::write(&text, fmt.html.as_deref(), fmt.rtf.as_deref()) {
             self.toast(&format!("Couldn't use the clipboard: {e}"), false);
             return;
         }

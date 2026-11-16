@@ -17,19 +17,86 @@ use crate::{Error, Result};
 pub struct Change {
     pub text: String,
     pub html: Option<String>,
+    /// Rich Text Format (Windows/macOS), e.g. from Word or Outlook.
+    pub rtf: Option<String>,
     /// Marked "don't record" by the source (password managers).
     pub concealed: bool,
     /// The app in front when the change was seen.
     pub source: Option<crate::foreground::AppInfo>,
 }
 
-/// Put text (and optionally HTML) on the clipboard.
-pub fn write(text: &str, html: Option<&str>) -> Result<()> {
+/// Put text (and optionally HTML and RTF) on the clipboard.
+pub fn write(text: &str, html: Option<&str>, rtf: Option<&str>) -> Result<()> {
     let mut cb = arboard::Clipboard::new().map_err(Error::new)?;
     match html {
-        Some(html) => cb.set().html(html, Some(text)).map_err(Error::new),
-        None => cb.set().text(text).map_err(Error::new),
+        Some(html) => cb.set().html(html, Some(text)).map_err(Error::new)?,
+        None => cb.set().text(text).map_err(Error::new)?,
     }
+    if let Some(rtf) = rtf {
+        add_rtf(rtf);
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+const RTF_FORMAT: &str = "Rich Text Format";
+
+/// Read the clipboard's RTF, if any (Windows/macOS).
+pub fn read_rtf() -> Option<String> {
+    #[cfg(windows)]
+    {
+        let _open = clipboard_win::Clipboard::new_attempts(10).ok()?;
+        let format = clipboard_win::raw::register_format(RTF_FORMAT)?;
+        let mut bytes = Vec::new();
+        clipboard_win::raw::get_vec(format.get(), &mut bytes).ok()?;
+        while bytes.last() == Some(&0) {
+            bytes.pop();
+        }
+        (!bytes.is_empty()).then(|| String::from_utf8_lossy(&bytes).into_owned())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::{NSPasteboard, NSPasteboardTypeRTF};
+        // SAFETY: reading a standard pasteboard type.
+        let data = NSPasteboard::generalPasteboard().dataForType(unsafe { NSPasteboardTypeRTF })?;
+        let bytes = data.to_vec();
+        (!bytes.is_empty()).then(|| String::from_utf8_lossy(&bytes).into_owned())
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        None
+    }
+}
+
+/// Add RTF next to what was just written (without clearing it).
+fn add_rtf(rtf: &str) {
+    #[cfg(windows)]
+    {
+        let Ok(_open) = clipboard_win::Clipboard::new_attempts(10) else {
+            return;
+        };
+        if let Some(format) = clipboard_win::raw::register_format(RTF_FORMAT) {
+            let mut bytes = rtf.as_bytes().to_vec();
+            bytes.push(0);
+            let _ = clipboard_win::raw::set_without_clear(format.get(), &bytes);
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::{NSPasteboard, NSPasteboardTypeRTF};
+        use objc2_foundation::{NSArray, NSData};
+        let pb = NSPasteboard::generalPasteboard();
+        // SAFETY: standard pasteboard type; no owner object.
+        unsafe {
+            pb.addTypes_owner(&NSArray::from_slice(&[NSPasteboardTypeRTF]), None);
+            pb.setData_forType(
+                Some(&NSData::with_bytes(rtf.as_bytes())),
+                NSPasteboardTypeRTF,
+            );
+        }
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    let _ = rtf;
 }
 
 /// The OS change counter, if the OS has one.
@@ -232,12 +299,13 @@ fn watch(stop: Arc<AtomicBool>, want_html: Arc<AtomicBool>, on_change: impl Fn(C
             continue;
         }
         let concealed = is_concealed();
-        let html = (!concealed && want_html.load(Ordering::Relaxed))
-            .then(|| cb.get().html().ok())
-            .flatten();
+        let rich = !concealed && want_html.load(Ordering::Relaxed);
+        let html = rich.then(|| cb.get().html().ok()).flatten();
+        let rtf = rich.then(read_rtf).flatten();
         on_change(Change {
             text,
             html,
+            rtf,
             concealed,
             source: crate::foreground::current_app(),
         });

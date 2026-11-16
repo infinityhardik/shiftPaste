@@ -10,6 +10,11 @@ export struct AppRow {
     detail: string,
 }
 
+export struct PasteRow {
+    label: string,
+    keys: int,
+}
+
 export struct PickRow {
     // A group heading when `section` is true.
     section: bool,
@@ -126,6 +131,10 @@ export component SettingsWindow inherits Window {
     in-out property <int> hotkey-mode;
     in property <[AppRow]> hotkey-apps;
     in property <string> pass-through-note;
+    // Per-app paste keystrokes (hidden on macOS, which always uses ⌘V).
+    in property <bool> show-paste-keys: true;
+    in property <[PasteRow]> paste-rows;
+    in property <[string]> paste-key-options: ["Ctrl+V", "Ctrl+Shift+V", "Shift+Insert"];
     // History
     in property <[string]> max-items-options: ["100", "500", "1,000", "5,000", "Unlimited"];
     in-out property <int> max-items-index: 1;
@@ -157,6 +166,9 @@ export component SettingsWindow inherits Window {
     callback hotkey-mode-changed(int);
     callback hotkey-add();
     callback hotkey-remove(int);
+    callback paste-add();
+    callback paste-remove(int);
+    callback paste-keys-changed(int, int);
     callback changed-history();
     callback clear-history();
     callback changed-privacy();
@@ -291,6 +303,55 @@ export component SettingsWindow inherits Window {
                                     add => { root.hotkey-add(); }
                                     remove(i) => { root.hotkey-remove(i); }
                                 }
+                            }
+                        }
+
+                        if root.page == 1 && root.show-paste-keys: SettingsCard {
+                            title: "How Shift Paste pastes";
+                            subtitle: "Most apps paste with Ctrl+V, and Linux terminals get Ctrl+Shift+V automatically. Add an app here if it needs a different keystroke.";
+                            if root.paste-rows.length > 0: Rectangle {
+                                border-radius: Theme.radius-md;
+                                border-width: 1px;
+                                border-color: Theme.border;
+                                background: Theme.bg;
+                                height: root.paste-rows.length * 46px + 2px;
+                                VerticalLayout {
+                                    padding: 1px;
+                                    for r[i] in root.paste-rows: Rectangle {
+                                        height: 46px;
+                                        HorizontalLayout {
+                                            padding-left: 12px;
+                                            padding-right: 6px;
+                                            spacing: 10px;
+                                            Icon { y: (parent.height - self.height) / 2; source: Icons.apps; size: 14px; }
+                                            Text { text: r.label; color: Theme.text; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                                            VerticalLayout {
+                                                alignment: center;
+                                                ComboBox {
+                                                    width: 160px;
+                                                    model: root.paste-key-options;
+                                                    current-index: r.keys;
+                                                    selected => { root.paste-keys-changed(i, self.current-index); }
+                                                }
+                                            }
+                                            VerticalLayout {
+                                                alignment: center;
+                                                IconButton {
+                                                    icon: Icons.close;
+                                                    label: "Remove " + r.label;
+                                                    size: 26px;
+                                                    icon-size: 12px;
+                                                    clicked => { root.paste-remove(i); }
+                                                }
+                                            }
+                                        }
+                                        if i < root.paste-rows.length - 1: Divider { y: parent.height - 1px; x: 12px; width: parent.width - 24px; }
+                                    }
+                                }
+                            }
+                            HorizontalLayout {
+                                alignment: start;
+                                Button { text: "Add apps…"; icon: Icons.plus; has-icon: true; clicked => { root.paste-add(); } }
                             }
                         }
 
