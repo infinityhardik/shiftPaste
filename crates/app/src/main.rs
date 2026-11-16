@@ -23,6 +23,7 @@ Usage: shiftpaste [--toggle | --editor | --settings | --quit]
   --quit       Quit the running instance";
 
 fn main() {
+    platform::prepare_process();
     let arg = std::env::args().nth(1);
     let command = match arg.as_deref() {
         None => None,

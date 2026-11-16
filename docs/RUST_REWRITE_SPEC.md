@@ -443,6 +443,23 @@ Caveats:
 - Windows and macOS numbers will differ, so re-measure there (§6 targets).
 - The difference comes mostly from dropping the Python interpreter and Qt, not from "Rust being fast".
 
+### 6.2 Measured: the real 2.0 app (2026-11-16)
+Release build, Linux, Xvfb + openbox, with **5,000 history items and 2,000 snippets** loaded. Read from `/proc/<pid>/status`.
+
+| State | RSS | Private |
+|---|---|---|
+| Idle in the tray, popup hidden | **48 MB** | **9 MB** |
+| Popup open | 52 MB | 9 MB |
+| Popup open, searching | 54 MB | 10 MB |
+| Popup hidden again | 54 MB | 10 MB |
+| Editor open | 58 MB | 11 MB |
+
+Notes:
+- **Compared with 1.x** (74–78 MB RSS, 29 MB private, empty database): about 35% less RSS and about 3× less private memory, while holding 7,000 items.
+- **The GL fix:** before it, idle RSS was 102 MB. GTK, which is only needed for the Linux tray, loaded Mesa's OpenGL stack (`libLLVM` + `libgallium`, about 45 MB). `GDK_GL=disable` is now set at start-up (`platform::prepare_process`).
+- **What's left on Linux:** about 20 MB of the RSS is shared libraries, mostly GTK/GLib for the tray, and about 19 MB is the binary's own code pages. Windows has no GTK, so it should land under the 40 MB idle target. That still has to be verified on a real Windows machine (§9).
+
+
 ---
 
 ## 7. Known risks and limitations (accepted)
