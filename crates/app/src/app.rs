@@ -45,6 +45,9 @@ pub fn post(f: impl FnOnce(&Rc<App>) + Send + 'static) {
     let _ = slint::invoke_from_event_loop(move || with_app(f));
 }
 
+/// macOS manual resize in progress: (edge, cursor at start, size at start), physical px.
+type ResizeDrag = (i32, (i32, i32), (u32, u32));
+
 #[derive(Default)]
 pub struct PopupState {
     results: Option<Results>,
@@ -59,7 +62,7 @@ pub struct PopupState {
     toast_undo: bool,
     toast_timer: Option<Timer>,
     /// macOS manual resize: (edge, cursor at start, size at start), physical px.
-    resizing: Option<(i32, (i32, i32), (u32, u32))>,
+    resizing: Option<ResizeDrag>,
 }
 
 struct PopupMenu {
