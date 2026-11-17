@@ -33,5 +33,11 @@ STAGE="$OUT/dmg"
 mkdir -p "$STAGE"
 cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
-hdiutil create -volname "Shift Paste" -srcfolder "$STAGE" -ov -format UDZO "$OUT/ShiftPaste-$VERSION-macOS-universal.dmg"
+DMG="$OUT/ShiftPaste-$VERSION-macOS-universal.dmg"
+# hdiutil sometimes fails with "Resource busy" on CI machines: retry.
+for attempt in 1 2 3 4; do
+  hdiutil create -volname "Shift Paste" -srcfolder "$STAGE" -ov -format UDZO "$DMG" && break
+  [ "$attempt" = 4 ] && exit 1
+  sleep $((attempt * 5))
+done
 echo "Built $OUT/ShiftPaste-$VERSION-macOS-universal.dmg"
