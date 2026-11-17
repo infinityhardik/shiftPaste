@@ -1,0 +1,54 @@
+name: Fix v1.1.0 release
+
+# One-off: give the v1.1.0 release its real 1.1.0 downloads (from the repo
+# history at 0e882de) and notes, replacing 2.0 builds that were labelled
+# 1.1.0 by mistake. Also keeps v2.0.0 as the latest release and fixes its
+# link to 1.x. Runs only on this working branch.
+on:
+  push:
+    branches: [claude/epic-pascal-1y1z8x]
+    paths:
+      - .github/workflows/fix-v1.1.0-release.yml
+      - .github/release-notes/1.1.0.md
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: The real 1.1.0 downloads
+        run: |
+          mkdir out
+          git show 0e882de:dist/ShiftPaste_Setup.exe > out/ShiftPaste-1.1.0-Setup.exe
+          git show 0e882de:dist/ShiftPaste.exe > out/ShiftPaste-1.1.0-portable.exe
+          sha256sum -c <<'SUMS'
+          48320e15f3f54e73626acdc0595ba7f48f67dc2be923f6fc9b9046f3dca7bac3  out/ShiftPaste-1.1.0-Setup.exe
+          5864022853e6e04cfca3e4b703b9180d122ca1fe5e26aa30a5aaf80e9b1ad1bc  out/ShiftPaste-1.1.0-portable.exe
+          SUMS
+      - name: Replace the mislabelled 2.0 builds
+        run: |
+          for f in ShiftPaste-1.1.0-macOS-universal.dmg ShiftPaste-1.1.0-portable.zip \
+                   ShiftPaste-1.1.0-x86_64.AppImage ShiftPaste-1.1.0-Setup.exe; do
+            if gh release view v1.1.0 --json assets -q '.assets[].name' | grep -qx "$f"; then
+              gh release delete-asset v1.1.0 "$f" --yes
+            fi
+          done
+          gh release upload v1.1.0 out/ShiftPaste-1.1.0-Setup.exe out/ShiftPaste-1.1.0-portable.exe --clobber
+      - name: Notes; v2.0.0 stays the latest release
+        run: |
+          gh release edit v1.1.0 --title "Shift Paste v1.1.0" --notes-file .github/release-notes/1.1.0.md --latest=false
+          gh release view v2.0.0 --json body -q .body \
+            | sed 's#/releases/tag/Final#/releases/tag/v1.1.0#' > notes-2.0.0.md
+          gh release edit v2.0.0 --notes-file notes-2.0.0.md --latest
+      - name: Result
+        run: |
+          gh release view v1.1.0 --json name,tagName,assets -q '.name, .tagName, (.assets[] | "\(.name)  \(.size) bytes")'
+          echo "v1.1.0 tag -> $(git rev-parse 'v1.1.0^{commit}') (1.1.0 is 0e882de5c7b2b9969aea6d35435518063be23e0b)"
