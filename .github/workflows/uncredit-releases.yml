@@ -1,0 +1,36 @@
+name: Restore release notes
+
+# One-off: take back the "Developed by" line added to the existing
+# releases' notes. Runs only on this working branch; v2.0.1 stays latest.
+on:
+  push:
+    branches: [claude/epic-pascal-1y1z8x]
+    paths: [.github/workflows/uncredit-releases.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      CREDIT: "**Developed by:** [InfinityHardik](https://github.com/infinityhardik) + Claude"
+    steps:
+      - name: Remove the credit line from each release's notes
+        run: |
+          for tag in v1.1.0 v2.0.0 v2.0.1; do
+            gh release view "$tag" --json body -q .body > body.md
+            if ! grep -qxF "$CREDIT" body.md; then echo "$tag: nothing to remove"; continue; fi
+            python3 -I -c 'import os,sys; c=os.environ["CREDIT"]; s=open("body.md").read(); s="\n".join(l for l in s.splitlines() if l!=c).rstrip()+"\n"; open("body.md","w").write(s)'
+            if [ "$tag" = v2.0.1 ]; then latest=--latest; else latest=--latest=false; fi
+            gh release edit "$tag" --notes-file body.md "$latest"
+            echo "$tag: restored"
+          done
+      - name: Result
+        run: |
+          for tag in v1.1.0 v2.0.0 v2.0.1; do
+            echo "== $tag"
+            gh release view "$tag" --json body -q .body | tail -n 2
+          done
