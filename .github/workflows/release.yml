@@ -1,21 +1,44 @@
 name: Release
 
 # Push a tag like v2.0.0 (or run manually) to build every download and attach
-# them to a *draft* GitHub Release for review before publishing.
+# them to a GitHub Release: a draft to review before publishing, unless a
+# manual run unticks "draft". The version must match Cargo.toml, so a build is
+# never labelled with another version. Release notes: the version's own
+# .github/release-notes/<version>.md (if any), then downloads.md.
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
     inputs:
       version:
-        description: "Version number, e.g. 2.0.0"
+        description: "Version number, e.g. 2.0.0 (must match Cargo.toml)"
         required: true
+      draft:
+        description: "Create a draft (publish it yourself after checking)"
+        type: boolean
+        default: true
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: The version matches Cargo.toml
+        run: |
+          want="${{ github.event.inputs.version || github.ref_name }}"
+          want="${want#v}"
+          have="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
+          echo "release: $want, Cargo.toml: $have"
+          if [ "$want" != "$have" ]; then
+            echo "::error::Release version $want doesn't match the app's version $have in Cargo.toml. Bump Cargo.toml first, or release $have."
+            exit 1
+          fi
+
   windows:
+    needs: check
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,6 +77,7 @@ jobs:
           path: dist-out/*
 
   macos:
+    needs: check
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -71,6 +95,7 @@ jobs:
           path: target/macos/*.dmg
 
   linux:
+    needs: check
     # Oldest supported runner = widest glibc compatibility for the AppImage.
     runs-on: ubuntu-22.04
     steps:
@@ -103,31 +128,25 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+      - name: Release notes
+        run: |
+          v="${{ github.event.inputs.version || github.ref_name }}"
+          v="${v#v}"
+          {
+            if [ -f ".github/release-notes/$v.md" ]; then cat ".github/release-notes/$v.md"; echo; fi
+            cat .github/release-notes/downloads.md
+          } > "$RUNNER_TEMP/release-notes.md"
+          cat "$RUNNER_TEMP/release-notes.md"
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
-          draft: true
+          draft: ${{ github.event_name != 'workflow_dispatch' || inputs.draft }}
           target_commitish: ${{ github.sha }}
           tag_name: ${{ github.event.inputs.version && format('v{0}', github.event.inputs.version) || github.ref_name }}
-          name: Shift Paste ${{ github.event.inputs.version || github.ref_name }}
+          name: Shift Paste ${{ github.event.inputs.version && format('v{0}', github.event.inputs.version) || github.ref_name }}
           files: artifacts/*
-          body: |
-            Shift Paste 2.0 is a rewrite in Rust: it uses a fraction of 1.x's memory and now runs on Windows, macOS and Linux.
-
-            **What's new**
-            - Fast, typo-forgiving search across clipboard history and your snippet collections (`@collection`, `#tag`).
-            - Built-in editor with undo/redo, favorites (★), drag or Alt+↑/↓ to reorder.
-            - Excel and CSV import (one click, or a wizard with column mapping) and export.
-            - Paste your way: plain text (⇧ Enter), case and line transforms (Alt Enter), several items at once.
-            - Privacy: 100% offline, skips password-manager copies, per-app lists for recording and the shortcut.
-            - Windows: the app you paste into keeps its size and maximized state; the uninstaller can remove all data.
-
-            **Downloads**
-            - **Windows:** `ShiftPaste-…-Setup.exe` (installs for all users; asks for admin) or the portable zip (keeps its data next to the program). The files aren't code-signed, so Windows may say "Windows protected your PC": click *More info → Run anyway*.
-            - **macOS:** open the `.dmg` and drag Shift Paste to Applications. It isn't notarized: the first time, right-click the app → Open. Then allow it under System Settings → Privacy & Security → Accessibility so it can paste for you.
-            - **Linux:** make the AppImage executable and run it (needs GTK 3; X11 fully supported, Wayland with some limits).
-
-            Shift Paste 1.x data isn't imported automatically; 1.x is still available from the [v1.1.0 release](https://github.com/infinityhardik/shiftPaste/releases/tag/Final).
+          body_path: ${{ runner.temp }}/release-notes.md

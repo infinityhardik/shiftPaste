@@ -52,7 +52,7 @@ cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings
 
 ## Releases and installers
 
-Push a tag such as `v2.0.0` and the **Release** workflow builds a draft GitHub Release for you to review and publish. It contains:
+Bump `version` in `Cargo.toml`, add notes in `.github/release-notes/<version>.md`, then push a tag such as `v2.0.1` (or run the **Release** workflow by hand). It builds a draft GitHub Release for you to review and publish; a manual run can publish directly. A version that doesn't match `Cargo.toml` is refused. The release contains:
 
 | Platform | Download |
 |---|---|
