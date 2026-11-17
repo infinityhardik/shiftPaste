@@ -92,4 +92,4 @@ Design decisions live in [`docs/RUST_REWRITE_SPEC.md`](docs/RUST_REWRITE_SPEC.md
 
 MIT. See [LICENSE](LICENSE). The UI is built with [Slint](https://slint.dev) under its royalty-free license.
 
-**Developed by:** [InfinityHardik](https://github.com/infinityhardik) + AI assistants (Gemini, Claude)
+**Developed by:** [InfinityHardik](https://github.com/infinityhardik) + Claude

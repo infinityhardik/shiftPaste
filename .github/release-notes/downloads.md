@@ -4,3 +4,5 @@
 - **Linux:** make the AppImage executable and run it (needs GTK 3; X11 fully supported, Wayland with some limits).
 
 Shift Paste 1.x data isn't imported automatically; 1.x is still available from the [v1.1.0 release](https://github.com/infinityhardik/shiftPaste/releases/tag/v1.1.0).
+
+**Developed by:** [InfinityHardik](https://github.com/infinityhardik) + Claude
