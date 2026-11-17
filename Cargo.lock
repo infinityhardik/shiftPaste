@@ -5257,7 +5257,7 @@ dependencies = [
 
 [[package]]
 name = "shiftpaste"
-version = "2.0.0-dev"
+version = "2.0.0"
 dependencies = [
  "dark-light",
  "png",
@@ -5272,7 +5272,7 @@ dependencies = [
 
 [[package]]
 name = "shiftpaste-core"
-version = "2.0.0-dev"
+version = "2.0.0"
 dependencies = [
  "calamine",
  "chrono",
@@ -5292,7 +5292,7 @@ dependencies = [
 
 [[package]]
 name = "shiftpaste-platform"
-version = "2.0.0-dev"
+version = "2.0.0"
 dependencies = [
  "active-win-pos-rs",
  "arboard",

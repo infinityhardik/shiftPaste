@@ -13,15 +13,5 @@ ShiftPaste-data/
 .DS_Store
 Thumbs.db
 
-# Legacy Python app (legacy/)
-__pycache__/
-*.py[cod]
-.venv/
-venv/
-legacy/data/clipboard.db
-legacy/data/~*.db
-legacy/data/Master/~*.xlsx
-build/
-
 # Packaging output
 packaging/windows/*.exe

@@ -1,5 +1,9 @@
 # Shift Paste — Codebase Report
 
+> **Historical.** This describes the Python 1.x app, which was removed from the
+> repository when 2.0 (Rust) replaced it. To read the code it refers to, check out
+> commit `fa2d57c` or earlier (it lived in `legacy/` there, and in the repo root before).
+
 > A plain-language map of the whole app: what it does, how the pieces fit, how data flows,
 > and where the sharp edges are. Written so a newcomer (human or AI) can get productive fast.
 >

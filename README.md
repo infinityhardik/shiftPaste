@@ -4,7 +4,7 @@
 
 Press **Ctrl+Shift+V** (**⌘⇧V** on macOS) anywhere. A popup opens next to your mouse with everything you've copied plus your saved snippets. Type a few letters, press **Enter**, and Shift Paste pastes it into the app you were in.
 
-**Status:** version 2.0 is being rewritten in Rust (this branch). The Python 1.x app is kept in [`legacy/`](legacy/) until 2.0 ships, and its downloads are still in [`dist/`](dist/).
+**Version 2.0** is a rewrite in Rust: a fraction of 1.x's memory, and it runs on Windows, macOS and Linux. The Python 1.x code is no longer in this repository; it's in the git history (commit `fa2d57c` and earlier).
 
 ---
 
@@ -72,7 +72,6 @@ crates/platform   OS integration: clipboard, hotkey, tray, paste keystrokes,
 crates/app        Slint UI (crates/app/ui/*.slint) and the window controllers
 packaging/        Windows installer (NSIS), macOS bundle/dmg, Linux AppImage
 docs/             Design spec and decisions (RUST_REWRITE_SPEC.md), 1.x report
-legacy/           The Python 1.x app (to be removed when 2.0 ships)
 ```
 
 Design decisions live in [`docs/RUST_REWRITE_SPEC.md`](docs/RUST_REWRITE_SPEC.md).

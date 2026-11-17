@@ -312,7 +312,6 @@ crates/
     main.rs        single instance, CLI (--toggle, --editor), wiring
     tray.rs        tray-icon + muda menu
     ui/*.slint     popup, editor, settings, import wizard, about
-legacy/        Python 1.x — removed when 2.0 is done
 .github/workflows/
   ci.yml       fmt + clippy + tests on windows/macos/ubuntu
   release.yml  on tag: NSIS installer + portable .exe, universal .dmg, AppImage → GitHub Release
@@ -415,9 +414,9 @@ The app you paste into must look exactly as before: a maximized window stays max
 - **Release profile:** `opt-level = "s"` or `3` (whichever measures better), `lto = "thin"`, `codegen-units = 1`, `strip = true`.
   - Panics are left on the default "unwind" setting so a bug in a worker thread is caught and logged without killing the always-running app. This is a robustness-over-size choice.
 - **Housekeeping:**
-  - Delete `dist/*.exe` from the repo; binaries live in Releases.
-  - Remove `shiftpaste.spec` and `setup_script.iss` along with `legacy/` at the end.
-  - Rewrite README and HOW_TO_BUILD for 2.0.
+  - ✅ Deleted `dist/*.exe` from the repo; binaries live in Releases.
+  - ✅ Removed `legacy/` (with `shiftpaste.spec`, `setup_script.iss`, HOW_TO_BUILD) and the 1.x `resources/` icons.
+  - ✅ README rewritten for 2.0.
 - **Credit:** Slint's free license asks for a credit. The About dialog uses Slint's built-in `AboutSlint` widget.
 
 ---
@@ -558,4 +557,9 @@ Notes:
    - the AppImage build (first run happens in CI);
    - native popup resizing on GNOME/KDE.
 2. **Verify the preset app identifiers** on real machines.
-3. **At the v2.0.0 tag:** remove `legacy/` and `dist/` (1.x downloads move to that release's notes).
+3. ~~Remove `legacy/` and `dist/`~~ Done (2026-11-17). 1.x downloads can go in the v2.0.0 release notes as links to the 1.x release.
+
+### Also done (2026-11-17)
+- **Windows paste focus:** the app you paste into keeps its size and maximized state (§4.1a). Confirmed on Windows.
+- **Version 2.0.0**; the 1.x code, old downloads and old icons are removed.
+- **Windows installer cross-built from Linux** (MinGW + NSIS), with the icon, version info and manifest embedded through MinGW's `windres`. The release workflow still builds the official one with MSVC on Windows.
