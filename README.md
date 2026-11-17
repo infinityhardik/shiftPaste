@@ -16,7 +16,7 @@ Press **Ctrl+Shift+V** (**⌘⇧V** on macOS) anywhere. A popup opens next to yo
 | **Collections** | Your own snippet lists (addresses, IDs, templates), with title, tags and private notes. Favorites (★) appear first. |
 | **Search that forgives typos** | Letters match in order, so `1884` finds “18 mm 8 x 4 LL Pro”. Type `@work` to search one collection or `#bank` for a tag. Accents and capitals don't matter. |
 | **Excel & CSV** | One-click import (each sheet becomes a collection) or a wizard with column mapping and a preview. Export one collection, all of them (a backup), or your history. |
-| **Paste your way** | `⇧ Enter` pastes plain text, `Alt Enter` changes case or joins several items (tab-separated fills Excel cells), `Ctrl+Space` picks several items. |
+| **Paste your way** | `Shift+Enter` pastes plain text, `Alt+Enter` changes case or joins several items (tab-separated fills Excel cells), `Ctrl+Space` picks several items. |
 | **Privacy** | 100% offline. Skips copies marked secret by password managers. App lists decide which apps are recorded and where the shortcut works. Pause anytime from the tray. |
 | **Everywhere** | Windows, macOS and Linux (X11 fully; Wayland with some limits). Light and dark themes, keyboard-first, screen-reader friendly. |
 
@@ -52,7 +52,7 @@ cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings
 
 ## Releases and installers
 
-Push a tag such as `v2.0.0` and the **Release** workflow builds a draft GitHub Release for you to review and publish. It contains:
+Bump `version` in `Cargo.toml`, add notes in `.github/release-notes/<version>.md`, then push a tag such as `v2.0.1` (or run the **Release** workflow by hand). It builds a draft GitHub Release for you to review and publish; a manual run can publish directly. A version that doesn't match `Cargo.toml` is refused. The release contains:
 
 | Platform | Download |
 |---|---|

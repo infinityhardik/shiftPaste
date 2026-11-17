@@ -80,7 +80,7 @@ fn key_code(key: &str) -> Option<Code> {
     Code::from_str(&name).ok()
 }
 
-/// Key caps for showing a shortcut in the UI, e.g. ["Ctrl", "⇧", "V"].
+/// Key caps for showing a shortcut in the UI, e.g. ["Ctrl", "Shift", "V"].
 pub fn caps(shortcut: &str, mac: bool) -> Vec<String> {
     shortcut
         .split('+')
@@ -94,7 +94,14 @@ pub fn caps(shortcut: &str, mac: bool) -> Vec<String> {
                     "Ctrl".into()
                 }
             }
-            "shift" => "⇧".into(),
+            // Windows and Linux write the key's name; macOS uses its symbol.
+            "shift" => {
+                if mac {
+                    "⇧".into()
+                } else {
+                    "Shift".into()
+                }
+            }
             "alt" | "option" | "opt" => {
                 if mac {
                     "⌥".into()
@@ -225,7 +232,7 @@ mod tests {
 
     #[test]
     fn caps_for_display() {
-        assert_eq!(caps("Ctrl+Shift+V", false), ["Ctrl", "⇧", "V"]);
+        assert_eq!(caps("Ctrl+Shift+V", false), ["Ctrl", "Shift", "V"]);
         assert_eq!(caps("Cmd+Shift+V", true), ["⌘", "⇧", "V"]);
     }
 }

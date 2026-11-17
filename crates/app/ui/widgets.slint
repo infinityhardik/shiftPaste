@@ -102,19 +102,33 @@ export component Button inherits Rectangle {
     animate background { duration: Theme.fast; }
 }
 
-// Keyboard shortcut cap, e.g. "↵" or "Ctrl".
+// Keyboard shortcut cap, e.g. "Ctrl" or "Alt ⏎". Shift and Enter are drawn
+// as icons (`shift`, `enter`): their symbols are missing from some fonts.
 export component Kbd inherits Rectangle {
     in property <string> text;
+    in property <bool> shift;
+    in property <bool> enter;
+    // No fixed minimum width: the cap is always as wide as its content, so
+    // a tight footer can't squeeze it.
     height: 18px;
-    min-width: 18px;
     border-radius: 4px;
     background: Theme.surface-2;
     border-width: 1px;
-    border-color: Theme.border;
+    border-color: Theme.border-strong;
+    accessible-role: AccessibleRole.text;
+    accessible-label: (root.shift ? "Shift " : "") + root.text + (root.enter ? " Enter" : "");
     HorizontalLayout {
         padding-left: 5px;
         padding-right: 5px;
-        Text {
+        spacing: 3px;
+        alignment: center;
+        if root.shift: Icon {
+            y: (parent.height - self.height) / 2;
+            source: Icons.shift;
+            size: 11px;
+            tint: Theme.text-muted;
+        }
+        if root.text != "": Text {
             text: root.text;
             font-size: Theme.font-xs;
             font-weight: 600;
@@ -122,17 +136,27 @@ export component Kbd inherits Rectangle {
             vertical-alignment: center;
             horizontal-alignment: center;
         }
+        if root.enter: Icon {
+            y: (parent.height - self.height) / 2;
+            source: Icons.enter;
+            size: 11px;
+            tint: Theme.text-muted;
+        }
     }
 }
 
-// "↵ Paste" style hint in footers.
+// "⏎ Paste" style hint in footers.
 export component KeyHint inherits HorizontalLayout {
     in property <string> key;
+    in property <bool> shift;
+    in property <bool> enter;
     in property <string> action;
     spacing: 5px;
     alignment: start;
     Kbd {
         text: key;
+        shift: root.shift;
+        enter: root.enter;
         y: (parent.height - self.height) / 2;
     }
     Text {

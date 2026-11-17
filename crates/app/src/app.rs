@@ -424,6 +424,13 @@ impl App {
                 crate::prefs_ctl::open_settings(app, None);
             })
         });
+        p.on_open_editor(|| {
+            with_app(|app| {
+                let hit = app.current_hit();
+                app.hide_popup();
+                crate::editor_ctl::open_editor(app, hit.map(|h| (h.kind, h.id)));
+            })
+        });
         p.on_resume_recording(|| with_app(|app| app.set_paused(false)));
         p.on_toast_clicked(|| with_app(|app| app.undo_from_popup()));
         p.set_resize_all_edges(!cfg!(target_os = "macos"));
@@ -481,6 +488,8 @@ impl App {
     fn focus_popup(&self) {
         use slint::winit_030::WinitWindowAccessor;
         let cursor = platform::cursor::position();
+        #[cfg(windows)]
+        let dark = self.is_dark();
         self.popup.window().with_winit_window(|w| {
             // Keep the whole popup on the monitor the mouse is on.
             let size = w.outer_size();
@@ -525,7 +534,9 @@ impl App {
                 let mut focused = false;
                 if let Ok(handle) = w.window_handle() {
                     if let RawWindowHandle::Win32(h) = handle.as_raw() {
-                        platform::window::polish_popup(h.hwnd.get());
+                        // Same colour as the popup's own border (Theme.border-strong).
+                        let border = if dark { 0x434346 } else { 0xd4d4d8 };
+                        platform::window::polish_popup(h.hwnd.get(), border);
                         // Not winit's focus_window(): it injects an Alt
                         // keystroke, which lands in the app you were using.
                         focused = platform::window::activate(h.hwnd.get());
@@ -885,8 +896,15 @@ impl App {
             crate::prefs_ctl::open_settings(self, None);
         } else if ctrl && k.eq_ignore_ascii_case(&'z') && self.popup_state.borrow().toast_undo {
             self.undo_from_popup();
+        } else if ctrl && is(Key::Backspace) {
+            // Clears the whole search, never deletes an item.
+            if !self.popup.get_query().is_empty() {
+                self.popup.set_query(SharedString::new());
+                self.popup_state.borrow_mut().all_favorites = false;
+                self.refresh_popup(false);
+            }
         } else if (is(Key::Delete) && self.popup.get_query().is_empty())
-            || (ctrl && (is(Key::Delete) || is(Key::Backspace)))
+            || (ctrl && is(Key::Delete))
         {
             self.delete_current();
         } else {

@@ -1,14 +1,16 @@
 //! Native touches for the popup window.
 
 /// Windows: make the popup a tool window (no taskbar button, not in
-/// Alt+Tab, like Shift Paste 1.x) and ask Windows 11 for rounded corners.
-/// Safe to call repeatedly; a no-op on other systems.
-pub fn polish_popup(hwnd: isize) {
+/// Alt+Tab, like Shift Paste 1.x) and ask Windows 11 for rounded corners,
+/// with its window border in `border_rgb` (0xRRGGBB, the popup's own border
+/// colour) instead of the system's dark one. Safe to call repeatedly; a no-op
+/// on other systems.
+pub fn polish_popup(hwnd: isize, border_rgb: u32) {
     #[cfg(windows)]
     {
         use windows_sys::Win32::Foundation::HWND;
         use windows_sys::Win32::Graphics::Dwm::{
-            DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
+            DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
         };
         use windows_sys::Win32::UI::WindowsAndMessaging::{
             GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, SWP_FRAMECHANGED,
@@ -32,7 +34,7 @@ pub fn polish_popup(hwnd: isize) {
                     SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
                 );
             }
-            // Windows 10 doesn't know this attribute and simply ignores it.
+            // Windows 10 doesn't know these attributes and simply ignores them.
             let round = DWMWCP_ROUND;
             DwmSetWindowAttribute(
                 hwnd,
@@ -40,10 +42,23 @@ pub fn polish_popup(hwnd: isize) {
                 (&round as *const i32).cast(),
                 std::mem::size_of::<i32>() as u32,
             );
+            // COLORREF is 0x00BBGGRR.
+            let (r, g, b) = (
+                (border_rgb >> 16) & 0xff,
+                (border_rgb >> 8) & 0xff,
+                border_rgb & 0xff,
+            );
+            let colorref: u32 = (b << 16) | (g << 8) | r;
+            DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_BORDER_COLOR as u32,
+                (&colorref as *const u32).cast(),
+                std::mem::size_of::<u32>() as u32,
+            );
         }
     }
     #[cfg(not(windows))]
-    let _ = hwnd;
+    let _ = (hwnd, border_rgb);
 }
 
 /// Windows: bring a window to the front without touching its size, position

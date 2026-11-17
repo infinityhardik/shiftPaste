@@ -128,8 +128,9 @@ Deliberately left out:
   | `Shift+Enter` | paste as plain text |
   | `Tab` | toggle the **preview pane** (full text of the selected item) |
   | `Ctrl+S` | save the selected history item to a collection (asks which) |
-  | `Ctrl+E` | open the item in the editor |
-  | `Delete` | remove the selected history item |
+  | `Ctrl+E` | open the item in the editor (also the ✎ button next to ⚙ Settings) |
+  | `Ctrl+Backspace` | clear the search (never deletes an item) |
+  | `Delete` (empty search) / `Ctrl+Delete` | remove the selected history item |
   | `Alt+Enter` | **paste transforms** menu: UPPERCASE · lowercase · Title Case · Trimmed · Single line (Option+Enter on macOS) |
   | `Ctrl+D` | ★ star/unstar a snippet. On a history item, saves it to a "Favorites" collection (created on first use) and stars it |
   | `Ctrl+Space` / `Ctrl+click` | add or remove the item from a **multi-selection** (a tick appears). `Enter` then pastes all ticked items, one per line, in the order ticked |

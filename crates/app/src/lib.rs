@@ -22,7 +22,10 @@ pub static CREATING_POPUP: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
 /// winit attributes hook: popup-only tweaks.
-/// - Windows: no taskbar button (like 1.x) and a native shadow.
+/// - Windows: no taskbar button (like 1.x). No winit "undecorated shadow":
+///   it keeps a 1px strip of window frame that shows as a dark line along the
+///   top. The popup draws its own border instead (and gets rounded corners on
+///   Windows 11, see `platform::window::polish_popup`).
 /// - macOS: a native shadow for the borderless window.
 pub fn adjust_window_attributes(
     attrs: slint::winit_030::winit::window::WindowAttributes,
@@ -33,7 +36,7 @@ pub fn adjust_window_attributes(
     #[cfg(windows)]
     {
         use slint::winit_030::winit::platform::windows::WindowAttributesExtWindows;
-        attrs.with_skip_taskbar(true).with_undecorated_shadow(true)
+        attrs.with_skip_taskbar(true).with_undecorated_shadow(false)
     }
     #[cfg(target_os = "macos")]
     {
@@ -58,8 +61,8 @@ pub fn key_labels() -> ui::Keys {
         _ => ui::Keys {
             r#mod: "Ctrl".into(),
             alt: "Alt".into(),
-            shift: "⇧".into(),
-            enter: "↵".into(),
+            shift: "Shift".into(),
+            enter: "Enter".into(),
         },
     }
 }
