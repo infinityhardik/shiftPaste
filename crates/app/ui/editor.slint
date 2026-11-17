@@ -1,0 +1,867 @@
+// The editor window: collections | snippets | detail, plus a History view.
+
+import { LineEdit, TextEdit, ListView, ScrollView, Palette } from "std-widgets.slint";
+import { Theme, Icons } from "theme.slint";
+import { Icon, IconButton, Button, Kbd, Chip, SectionLabel, Divider, VDivider, EmptyState, Card, MenuRow, Toast } from "widgets.slint";
+
+export struct CollectionItem {
+    name: string,
+    count: int,
+    favorites: bool,
+}
+
+export struct ListItem {
+    title: string,
+    preview: string,
+    meta: string,
+    starred: bool,
+    rich: bool,
+}
+
+export struct PickerItem {
+    label: string,
+    hint: string,
+}
+
+// One collection in the sidebar (selected, editable name, drop target).
+component CollectionRow inherits Rectangle {
+    in property <CollectionItem> data;
+    in property <bool> selected;
+    in property <bool> renaming;
+    callback clicked();
+    callback rename-done(string);
+    callback rename-cancelled();
+    callback delete();
+    callback start-rename();
+
+    height: 34px;
+    border-radius: Theme.radius-md;
+    background: selected ? Theme.accent-soft-strong : touch.has-hover ? Theme.hover : transparent;
+    accessible-role: list-item;
+    accessible-label: data.name + ", " + data.count + " snippets";
+    accessible-item-selected: selected;
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+        double-clicked => { root.start-rename(); }
+    }
+    ContextMenuArea {
+        Menu {
+            MenuItem { title: "Rename"; activated => { root.start-rename(); } }
+            MenuItem { title: "Delete collection…"; activated => { root.delete(); } }
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 9px;
+        Icon {
+            y: (parent.height - self.height) / 2;
+            source: data.favorites ? Icons.star-filled : Icons.folder;
+            size: 15px;
+            tint: data.favorites ? Theme.star : selected ? Theme.accent : Theme.text-subtle;
+        }
+        if !renaming: Text {
+            text: data.name;
+            font-size: Theme.font-md;
+            font-weight: selected ? 600 : 400;
+            color: Theme.text;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+        if renaming: Rectangle {
+            horizontal-stretch: 1;
+            border-radius: Theme.radius-sm;
+            background: Theme.bg;
+            border-width: 1.5px;
+            border-color: Theme.accent;
+            name-input := TextInput {
+                x: 6px;
+                width: parent.width - 12px;
+                text: data.name;
+                font-size: Theme.font-md;
+                color: Theme.text;
+                vertical-alignment: center;
+                single-line: true;
+                init => { self.focus(); self.select-all(); }
+                accepted => { root.rename-done(self.text); }
+                key-pressed(e) => {
+                    if (e.text == Key.Escape) { root.rename-cancelled(); return accept; }
+                    reject
+                }
+            }
+        }
+        Text {
+            text: data.count;
+            font-size: Theme.font-xs;
+            color: Theme.text-faint;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// A snippet or history row in the middle list, with a drag handle.
+component ItemRow inherits Rectangle {
+    in property <ListItem> data;
+    in property <bool> selected;
+    in property <bool> draggable;
+    in property <bool> drop-above;
+    in property <bool> is-history;
+    callback clicked();
+    callback drag-start();
+    callback drag-move(length);
+    callback drag-end();
+    callback toggle-star();
+    callback move-to();
+    callback copy-to();
+    callback delete();
+    callback save-to();
+
+    height: 56px;
+    accessible-role: list-item;
+    accessible-label: data.title;
+    accessible-item-selected: selected;
+
+    Rectangle {
+        x: 6px;
+        width: parent.width - 12px;
+        height: parent.height - 4px;
+        y: 2px;
+        border-radius: Theme.radius-md;
+        background: selected ? Theme.accent-soft-strong : touch.has-hover ? Theme.hover : transparent;
+
+        touch := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { root.clicked(); }
+        }
+        ContextMenuArea {
+            Menu {
+                if !is-history: MenuItem { title: data.starred ? "Remove from favorites" : "Add to favorites"; activated => { root.toggle-star(); } }
+                if !is-history: MenuItem { title: "Move to…"; activated => { root.move-to(); } }
+                if !is-history: MenuItem { title: "Copy to…"; activated => { root.copy-to(); } }
+                if is-history: MenuItem { title: "Save to collection…"; activated => { root.save-to(); } }
+                if is-history: MenuItem { title: "Add to favorites"; activated => { root.toggle-star(); } }
+                MenuItem { title: "Delete"; activated => { root.delete(); } }
+            }
+        }
+
+        HorizontalLayout {
+            padding-left: draggable ? 2px : 12px;
+            padding-right: 10px;
+            spacing: 8px;
+            if draggable: Rectangle {
+                width: 18px;
+                Icon {
+                    source: Icons.grip;
+                    size: 16px;
+                    tint: grip.has-hover || grip.pressed ? Theme.text-muted : Theme.text-faint;
+                    opacity: touch.has-hover || selected || grip.pressed ? 1 : 0;
+                }
+                grip := TouchArea {
+                    mouse-cursor: grab;
+                    pointer-event(e) => {
+                        if (e.kind == PointerEventKind.down) { root.drag-start(); }
+                        if (e.kind == PointerEventKind.up) { root.drag-end(); }
+                    }
+                    moved => { root.drag-move(self.mouse-y); }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 2px;
+                horizontal-stretch: 1;
+                Text {
+                    text: data.title;
+                    font-size: Theme.font-md;
+                    font-weight: 600;
+                    color: Theme.text;
+                    overflow: elide;
+                }
+                if data.preview != "": Text {
+                    text: data.preview;
+                    font-size: Theme.font-sm;
+                    color: Theme.text-subtle;
+                    overflow: elide;
+                }
+            }
+            if data.rich: Icon { y: (parent.height - self.height) / 2; source: Icons.rich; size: 13px; tint: Theme.text-faint; }
+            if data.meta != "": Text {
+                text: data.meta;
+                font-size: Theme.font-xs;
+                color: Theme.text-faint;
+                vertical-alignment: center;
+            }
+            if !is-history: Rectangle {
+                width: 24px;
+                Icon {
+                    source: data.starred ? Icons.star-filled : Icons.star;
+                    size: 15px;
+                    tint: data.starred ? Theme.star : Theme.text-faint;
+                    opacity: data.starred || touch.has-hover || selected ? 1 : 0;
+                }
+                TouchArea { mouse-cursor: pointer; clicked => { root.toggle-star(); } }
+            }
+        }
+    }
+    // Insertion line while dragging.
+    if drop-above: Rectangle {
+        y: 0;
+        x: 12px;
+        width: parent.width - 24px;
+        height: 2px;
+        border-radius: 1px;
+        background: Theme.accent;
+    }
+}
+
+// Label above a field.
+component FieldLabel inherits Text {
+    font-size: Theme.font-xs;
+    font-weight: 600;
+    color: Theme.text-subtle;
+}
+
+export component EditorWindow inherits Window {
+    title: "Shift Paste";
+    icon: Icons.logo;
+    background: Theme.bg;
+    default-font-size: Theme.font-md;
+    preferred-width: 1080px;
+    preferred-height: 700px;
+    min-width: 820px;
+    min-height: 520px;
+
+    // Keep the standard widgets (text boxes, scrollbars) in the same light/dark scheme.
+    property <bool> dark-scheme: Theme.dark;
+    init => { Palette.color-scheme = self.dark-scheme ? ColorScheme.dark : ColorScheme.light; }
+    changed dark-scheme => { Palette.color-scheme = self.dark-scheme ? ColorScheme.dark : ColorScheme.light; }
+
+    // ---- view state
+    in-out property <int> view: 0; // 0 = a collection, 1 = history
+    in property <[CollectionItem]> collections;
+    in property <int> current-collection: -1;
+    in-out property <int> renaming-collection: -1;
+    in property <[ListItem]> items;
+    in property <int> current-item: -1;
+    in-out property <string> filter;
+    in property <string> list-title;
+    in property <string> list-subtitle;
+
+    // ---- detail (snippet or history item)
+    in property <bool> has-detail;
+    in-out property <string> detail-title;
+    in-out property <string> detail-content;
+    in-out property <string> detail-notes;
+    in property <[string]> detail-tags;
+    in property <string> detail-meta;
+    in property <bool> detail-starred;
+    in property <string> saved-text;
+
+    // ---- toolbar
+    in property <bool> can-undo;
+    in property <bool> can-redo;
+    in property <string> undo-label;
+    in property <string> redo-label;
+    in property <string> mod-key: "Ctrl";
+
+    // ---- overlays
+    in property <bool> menu-open;
+    in property <string> menu-title;
+    in property <[PickerItem]> menu-items;
+    in property <int> menu-current;
+    in property <bool> confirm-open;
+    in property <string> confirm-title;
+    in property <string> confirm-message;
+    in property <string> confirm-action;
+    in property <string> toast-text;
+    in property <string> toast-action;
+    in property <bool> first-run;
+    // macOS: the Accessibility permission (needed to paste for you) is missing.
+    in property <bool> paste-permission-missing;
+    in property <[string]> hotkey-caps: ["Ctrl", "⇧", "V"];
+
+    // ---- drag state (list rows)
+    property <int> drag-from: -1;
+    property <int> drop-at: -1;
+    property <length> row-height: 56px;
+
+    // ---- callbacks
+    callback view-history();
+    callback collection-clicked(int);
+    callback collection-new();
+    callback collection-renamed(int, string);
+    callback collection-delete(int);
+    callback item-clicked(int);
+    callback item-moved(int, int);
+    callback item-star(int);
+    callback item-move-to(int);
+    callback item-copy-to(int);
+    callback item-save-to(int);
+    callback item-delete(int);
+    callback item-new();
+    callback filter-edited(string);
+    callback detail-edited();
+    callback tag-added(string);
+    callback tag-removed(int);
+    callback undo();
+    callback redo();
+    callback import();
+    callback export();
+    callback open-settings();
+    callback menu-clicked(int);
+    callback confirm-done(bool);
+    callback toast-clicked();
+    callback welcome-done();
+    callback open-paste-permission();
+    callback handle-key(string, bool, bool, bool) -> bool;
+
+    FocusScope {
+        capture-key-pressed(e) => {
+            if (root.handle-key(e.text, e.modifiers.control || e.modifiers.meta, e.modifiers.shift, e.modifiers.alt)) {
+                return accept;
+            }
+            reject
+        }
+
+        VerticalLayout {
+            // ------------------------------------------------------------ toolbar
+            Rectangle {
+                height: 52px;
+                background: Theme.bg;
+                HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 12px;
+                    spacing: 6px;
+                    Image {
+                        source: Icons.logo;
+                        width: 22px;
+                        height: 22px;
+                        y: (parent.height - self.height) / 2;
+                    }
+                    Text {
+                        text: "Shift Paste";
+                        font-size: Theme.font-lg;
+                        font-weight: 700;
+                        color: Theme.text;
+                        vertical-alignment: center;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    IconButton {
+                        y: (parent.height - self.height) / 2;
+                        icon: Icons.undo;
+                        label: root.can-undo ? "Undo " + root.undo-label + " (" + root.mod-key + "+Z)" : "Nothing to undo";
+                        enabled: root.can-undo;
+                        clicked => { root.undo(); }
+                    }
+                    IconButton {
+                        y: (parent.height - self.height) / 2;
+                        icon: Icons.redo;
+                        label: root.can-redo ? "Redo " + root.redo-label : "Nothing to redo";
+                        enabled: root.can-redo;
+                        clicked => { root.redo(); }
+                    }
+                    Rectangle { width: 6px; }
+                    Button {
+                        y: (parent.height - self.height) / 2;
+                        text: "Import";
+                        icon: Icons.import;
+                        has-icon: true;
+                        clicked => { root.import(); }
+                    }
+                    Button {
+                        y: (parent.height - self.height) / 2;
+                        text: "Export";
+                        icon: Icons.export;
+                        has-icon: true;
+                        clicked => { root.export(); }
+                    }
+                    IconButton {
+                        y: (parent.height - self.height) / 2;
+                        icon: Icons.sliders;
+                        label: "Settings";
+                        clicked => { root.open-settings(); }
+                    }
+                }
+            }
+            Divider { }
+
+            if root.paste-permission-missing: Rectangle {
+                height: 44px;
+                background: Theme.warning-soft;
+                HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 12px;
+                    spacing: 10px;
+                    Icon { y: (parent.height - self.height) / 2; source: Icons.shield; size: 16px; tint: Theme.star; }
+                    Text {
+                        text: "Allow Shift Paste to paste for you: macOS needs the Accessibility permission. Until then, items are copied and you press ⌘V.";
+                        color: Theme.text-muted;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                        overflow: elide;
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        Button { text: "Open Settings"; primary: true; compact: true; clicked => { root.open-paste-permission(); } }
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                vertical-stretch: 1;
+                // ------------------------------------------------------- sidebar
+                Rectangle {
+                    width: 232px;
+                    background: Theme.surface;
+                    VerticalLayout {
+                        padding: 10px;
+                        spacing: 2px;
+                        // History entry
+                        Rectangle {
+                            height: 34px;
+                            border-radius: Theme.radius-md;
+                            background: root.view == 1 ? Theme.accent-soft-strong : hist-touch.has-hover ? Theme.hover : transparent;
+                            accessible-role: button;
+                            accessible-label: "Clipboard history";
+                            HorizontalLayout {
+                                padding-left: 10px;
+                                spacing: 9px;
+                                Icon { y: (parent.height - self.height) / 2; source: Icons.clock; size: 15px; tint: root.view == 1 ? Theme.accent : Theme.text-subtle; }
+                                Text { text: "Clipboard history"; vertical-alignment: center; font-weight: root.view == 1 ? 600 : 400; color: Theme.text; }
+                            }
+                            hist-touch := TouchArea { mouse-cursor: pointer; clicked => { root.view-history(); } }
+                        }
+                        Rectangle { height: 10px; }
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            height: 26px;
+                            SectionLabel { text: "COLLECTIONS"; horizontal-stretch: 1; }
+                            IconButton {
+                                icon: Icons.plus;
+                                label: "New collection";
+                                size: 24px;
+                                icon-size: 14px;
+                                clicked => { root.collection-new(); }
+                            }
+                        }
+                        ListView {
+                            vertical-stretch: 1;
+                            for c[i] in root.collections: CollectionRow {
+                                data: c;
+                                selected: root.view == 0 && i == root.current-collection;
+                                renaming: i == root.renaming-collection;
+                                clicked => { root.collection-clicked(i); }
+                                start-rename => { root.renaming-collection = i; }
+                                rename-done(name) => {
+                                    root.renaming-collection = -1;
+                                    root.collection-renamed(i, name);
+                                }
+                                rename-cancelled => { root.renaming-collection = -1; }
+                                delete => { root.collection-delete(i); }
+                            }
+                        }
+                        if root.collections.length == 0: Text {
+                            text: "No collections yet.";
+                            color: Theme.text-faint;
+                            font-size: Theme.font-sm;
+                            horizontal-alignment: center;
+                        }
+                    }
+                }
+                VDivider { }
+
+                // ---------------------------------------------------- item list
+                Rectangle {
+                    width: 340px;
+                    VerticalLayout {
+                        padding-top: 12px;
+                        spacing: 8px;
+                        HorizontalLayout {
+                            padding-left: 16px;
+                            padding-right: 10px;
+                            spacing: 6px;
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                Text {
+                                    text: root.list-title;
+                                    font-size: Theme.font-xl;
+                                    font-weight: 700;
+                                    color: Theme.text;
+                                    overflow: elide;
+                                }
+                                Text {
+                                    text: root.list-subtitle;
+                                    font-size: Theme.font-xs;
+                                    color: Theme.text-subtle;
+                                }
+                            }
+                            if root.view == 0 && root.current-collection >= 0: Button {
+                                y: (parent.height - self.height) / 2;
+                                text: "New snippet";
+                                icon: Icons.plus;
+                                has-icon: true;
+                                primary: true;
+                                clicked => { root.item-new(); }
+                            }
+                        }
+                        // Filter field
+                        Rectangle {
+                            height: 34px;
+                            x: 12px;
+                            width: parent.width - 24px;
+                            border-radius: Theme.radius-md;
+                            background: Theme.surface;
+                            border-width: 1px;
+                            border-color: filter-input.has-focus ? Theme.accent : Theme.border;
+                            HorizontalLayout {
+                                padding-left: 10px;
+                                padding-right: 10px;
+                                spacing: 8px;
+                                Icon { y: (parent.height - self.height) / 2; source: Icons.search; size: 14px; }
+                                Rectangle {
+                                    horizontal-stretch: 1;
+                                    filter-input := TextInput {
+                                        width: 100%;
+                                        height: 100%;
+                                        text <=> root.filter;
+                                        vertical-alignment: center;
+                                        single-line: true;
+                                        color: Theme.text;
+                                        font-size: Theme.font-md;
+                                        accessible-role: text-input;
+                                        accessible-label: "Filter";
+                                        edited => { root.filter-edited(self.text); }
+                                    }
+                                    if root.filter == "": Text {
+                                        text: root.view == 1 ? "Filter history" : "Filter snippets";
+                                        color: Theme.text-faint;
+                                        vertical-alignment: center;
+                                        height: parent.height;
+                                        x: 0;
+                                    }
+                                }
+                            }
+                        }
+                        Rectangle {
+                            vertical-stretch: 1;
+                            list := ListView {
+                                for item[i] in root.items: ItemRow {
+                                    data: item;
+                                    selected: i == root.current-item;
+                                    is-history: root.view == 1;
+                                    draggable: root.view == 0 && root.filter == "";
+                                    drop-above: root.drag-from >= 0 && i == root.drop-at && i != root.drag-from && i != root.drag-from + 1;
+                                    clicked => { root.item-clicked(i); }
+                                    drag-start => { root.drag-from = i; root.drop-at = i; }
+                                    drag-move(y) => {
+                                        root.drop-at = max(0, min(root.items.length, floor((i * root.row-height + y) / root.row-height + 0.5)));
+                                    }
+                                    drag-end => {
+                                        if (root.drag-from >= 0 && root.drop-at != root.drag-from && root.drop-at != root.drag-from + 1) {
+                                            root.item-moved(root.drag-from, root.drop-at > root.drag-from ? root.drop-at - 1 : root.drop-at);
+                                        }
+                                        root.drag-from = -1;
+                                        root.drop-at = -1;
+                                    }
+                                    toggle-star => { root.item-star(i); }
+                                    move-to => { root.item-move-to(i); }
+                                    copy-to => { root.item-copy-to(i); }
+                                    save-to => { root.item-save-to(i); }
+                                    delete => { root.item-delete(i); }
+                                }
+                            }
+                            if root.items.length == 0: EmptyState {
+                                icon: root.view == 1 ? Icons.inbox : root.filter != "" ? Icons.search : Icons.folder;
+                                title: root.filter != "" ? "No matches" : root.view == 1 ? "No history yet" : root.current-collection < 0 ? "No collection selected" : "This collection is empty";
+                                message: root.filter != "" ? "Try fewer letters: they match in order."
+                                    : root.view == 1 ? "Everything you copy appears here."
+                                    : root.current-collection < 0 ? "Create a collection, or import an Excel or CSV file."
+                                    : "Add a snippet, or import rows from Excel or CSV.";
+                            }
+                        }
+                    }
+                }
+                VDivider { }
+
+                // ------------------------------------------------------ detail pane
+                Rectangle {
+                    horizontal-stretch: 1;
+                    background: Theme.bg;
+                    if !root.has-detail: EmptyState {
+                        icon: Icons.edit;
+                        title: root.view == 1 ? "Select an item" : "Select a snippet";
+                        message: root.view == 1 ? "Edit its text, delete it, or save it to a collection." : "Its title, tags, content and notes appear here. Changes save automatically.";
+                    }
+                    if root.has-detail: VerticalLayout {
+                        padding: 20px;
+                        spacing: 14px;
+                        // Header row: star + actions
+                        HorizontalLayout {
+                            vertical-stretch: 0;
+                            spacing: 6px;
+                            if root.view == 0: VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: 6px;
+                                FieldLabel { text: "Title"; }
+                                LineEdit {
+                                    text <=> root.detail-title;
+                                    placeholder-text: "Optional short name, e.g. “Bank IFSC”";
+                                    edited => { root.detail-edited(); }
+                                }
+                            }
+                            if root.view == 1: Text {
+                                text: "History item";
+                                font-size: Theme.font-xl;
+                                font-weight: 700;
+                                color: Theme.text;
+                                horizontal-stretch: 1;
+                                vertical-alignment: center;
+                            }
+                            VerticalLayout {
+                                alignment: end;
+                                HorizontalLayout {
+                                    spacing: 2px;
+                                    IconButton {
+                                        icon: root.detail-starred ? Icons.star-filled : Icons.star;
+                                        tint: root.detail-starred ? Theme.star : Theme.text-subtle;
+                                        label: root.detail-starred ? "Remove from favorites" : "Add to favorites";
+                                        size: 34px;
+                                        clicked => { root.item-star(root.current-item); }
+                                    }
+                                    if root.view == 0: IconButton {
+                                        icon: Icons.folder;
+                                        label: "Move to another collection";
+                                        size: 34px;
+                                        clicked => { root.item-move-to(root.current-item); }
+                                    }
+                                    if root.view == 1: IconButton {
+                                        icon: Icons.folder;
+                                        label: "Save to collection";
+                                        size: 34px;
+                                        clicked => { root.item-save-to(root.current-item); }
+                                    }
+                                    IconButton {
+                                        icon: Icons.trash;
+                                        label: "Delete";
+                                        tint: Theme.danger;
+                                        size: 34px;
+                                        clicked => { root.item-delete(root.current-item); }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Tags
+                        if root.view == 0: VerticalLayout {
+                            vertical-stretch: 0;
+                            spacing: 6px;
+                            FieldLabel { text: "Tags"; }
+                            Rectangle {
+                                min-height: 34px;
+                                border-radius: Theme.radius-md;
+                                border-width: 1px;
+                                border-color: tag-input.has-focus ? Theme.accent : Theme.border-strong;
+                                background: Theme.raised;
+                                HorizontalLayout {
+                                    padding-left: 6px;
+                                    padding-right: 8px;
+                                    spacing: 6px;
+                                    for t[i] in root.detail-tags: Chip {
+                                        y: (parent.height - self.height) / 2;
+                                        text: "#" + t;
+                                        removable: true;
+                                        fg: Theme.accent;
+                                        fill: Theme.accent-soft;
+                                        remove => { root.tag-removed(i); }
+                                    }
+                                    Rectangle {
+                                        horizontal-stretch: 1;
+                                        min-width: 80px;
+                                        tag-input := TextInput {
+                                            width: 100%;
+                                            height: 100%;
+                                            single-line: true;
+                                            vertical-alignment: center;
+                                            color: Theme.text;
+                                            accessible-role: text-input;
+                                            accessible-label: "Add tag";
+                                            accepted => {
+                                                root.tag-added(self.text);
+                                                self.text = "";
+                                            }
+                                            edited => {
+                                                if (self.text.character-count > 1 && (self.text.ends-with(",") || self.text.ends-with(";"))) {
+                                                    root.tag-added(self.text);
+                                                    self.text = "";
+                                                }
+                                            }
+                                        }
+                                        if tag-input.text == "": Text {
+                                            text: root.detail-tags.length == 0 ? "Add tags: press Enter or comma after each" : "Add tag";
+                                            color: Theme.text-faint;
+                                            vertical-alignment: center;
+                                            height: parent.height;
+                                            x: 0;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Content
+                        VerticalLayout {
+                            vertical-stretch: 1;
+                            spacing: 6px;
+                            HorizontalLayout {
+                                vertical-stretch: 0;
+                                FieldLabel { text: root.view == 0 ? "Content (what gets pasted)" : "Text"; horizontal-stretch: 1; }
+                                Text {
+                                    text: root.saved-text;
+                                    font-size: Theme.font-xs;
+                                    color: Theme.text-faint;
+                                }
+                            }
+                            TextEdit {
+                                vertical-stretch: 1;
+                                text <=> root.detail-content;
+                                wrap: word-wrap;
+                                font-size: Theme.font-md;
+                                edited => { root.detail-edited(); }
+                            }
+                        }
+
+                        // Notes
+                        if root.view == 0: VerticalLayout {
+                            vertical-stretch: 0;
+                            spacing: 6px;
+                            FieldLabel { text: "Notes (private, never pasted)"; }
+                            TextEdit {
+                                height: 76px;
+                                text <=> root.detail-notes;
+                                wrap: word-wrap;
+                                font-size: Theme.font-md;
+                                edited => { root.detail-edited(); }
+                            }
+                        }
+                        Text {
+                            text: root.detail-meta;
+                            font-size: Theme.font-xs;
+                            color: Theme.text-subtle;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---------------------------------------------------------- welcome card
+        if root.first-run: Rectangle {
+            background: Theme.scrim;
+            TouchArea { }
+            Card {
+                width: 460px;
+                height: welcome.preferred-height;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2 - 20px;
+                welcome := VerticalLayout {
+                    padding: 28px;
+                    spacing: 14px;
+                    Image { source: Icons.logo; width: 52px; height: 52px; }
+                    Text {
+                        text: "Welcome to Shift Paste";
+                        font-size: Theme.font-2xl;
+                        font-weight: 700;
+                        color: Theme.text;
+                    }
+                    Text {
+                        text: "Everything you copy is saved, and your snippets are one keystroke away.";
+                        wrap: word-wrap;
+                        color: Theme.text-muted;
+                        font-size: Theme.font-lg;
+                    }
+                    HorizontalLayout {
+                        spacing: 6px;
+                        Text { text: "Open it anywhere with"; color: Theme.text-muted; vertical-alignment: center; }
+                        for cap in root.hotkey-caps: Kbd { text: cap; y: (parent.height - self.height) / 2; }
+                        Rectangle { horizontal-stretch: 1; }
+                    }
+                    Text {
+                        text: "Have snippets in Excel? Import them into a collection, then type to find any row instantly.";
+                        wrap: word-wrap;
+                        color: Theme.text-muted;
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: end;
+                        Button { text: "Import Excel or CSV…"; clicked => { root.import(); } }
+                        Button { text: "Get started"; primary: true; clicked => { root.welcome-done(); } }
+                    }
+                }
+            }
+        }
+
+        // ---------------------------------------------------------- picker / menu
+        if root.menu-open: Rectangle {
+            background: Theme.scrim;
+            TouchArea { clicked => { root.menu-clicked(-1); } }
+            Card {
+                width: 320px;
+                height: picker.preferred-height;
+                x: (parent.width - self.width) / 2;
+                y: 90px;
+                picker := VerticalLayout {
+                    padding: 6px;
+                    spacing: 1px;
+                    HorizontalLayout {
+                        padding-left: 10px;
+                        height: 28px;
+                        SectionLabel { text: root.menu-title; }
+                    }
+                    for m[i] in root.menu-items: MenuRow {
+                        text: m.label;
+                        shortcut: m.hint;
+                        selected: i == root.menu-current;
+                        clicked => { root.menu-clicked(i); }
+                    }
+                }
+            }
+        }
+
+        // ---------------------------------------------------------- confirm dialog
+        if root.confirm-open: Rectangle {
+            background: Theme.scrim;
+            TouchArea { }
+            Card {
+                width: 400px;
+                height: confirm.preferred-height;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2 - 30px;
+                confirm := VerticalLayout {
+                    padding: 22px;
+                    spacing: 10px;
+                    Text { text: root.confirm-title; font-size: Theme.font-lg; font-weight: 700; color: Theme.text; wrap: word-wrap; }
+                    Text { text: root.confirm-message; color: Theme.text-muted; wrap: word-wrap; }
+                    Rectangle { height: 6px; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: end;
+                        Button { text: "Cancel"; clicked => { root.confirm-done(false); } }
+                        Button { text: root.confirm-action; primary: true; clicked => { root.confirm-done(true); } }
+                    }
+                }
+            }
+        }
+
+        if root.toast-text != "": Toast {
+            x: (parent.width - self.width) / 2;
+            y: parent.height - self.height - 18px;
+            width: min(460px, parent.width - 40px);
+            text: root.toast-text;
+            action-text: root.toast-action;
+            action => { root.toast-clicked(); }
+        }
+    }
+}

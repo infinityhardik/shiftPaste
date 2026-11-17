@@ -1,0 +1,591 @@
+// The popup: search field, results, optional preview pane, menus and key hints.
+// All keyboard behaviour is decided in Rust (`handle-key`), so it is testable.
+
+import { ListView, ScrollView, Palette } from "std-widgets.slint";
+import { Theme, Icons } from "theme.slint";
+import { Icon, IconButton, Kbd, KeyHint, Chip, SectionLabel, Divider, VDivider, EmptyState, Card, MenuRow, Toast } from "widgets.slint";
+
+export enum RowKind { item, section, more }
+
+export struct PopupRow {
+    kind: RowKind,
+    title: string,
+    title-styled: styled-text,
+    preview: string,
+    preview-styled: styled-text,
+    highlight: bool,
+    is-snippet: bool,
+    collection: string,
+    meta: string,
+    starred: bool,
+    rich: bool,
+    // 1-based position in the multi-selection, 0 = not ticked.
+    pick: int,
+}
+
+export struct MenuEntry {
+    label: string,
+    shortcut: string,
+    section: bool,
+}
+
+export struct Keys {
+    mod: string,
+    alt: string,
+    shift: string,
+    enter: string,
+}
+
+component ResultRow inherits Rectangle {
+    in property <PopupRow> data;
+    in property <bool> selected;
+    in property <bool> picking;
+    in property <Keys> keys;
+    callback clicked(bool /* ctrl */);
+    callback hovered();
+
+    height: data.kind == RowKind.section ? 28px : data.kind == RowKind.more ? 34px : 54px;
+
+    if data.kind == RowKind.section: HorizontalLayout {
+        padding-left: 18px;
+        padding-top: 8px;
+        SectionLabel {
+            text: data.title;
+            accessible-role: text;
+            accessible-label: data.title;
+        }
+    }
+
+    if data.kind == RowKind.more: Rectangle {
+        accessible-role: button;
+        accessible-label: data.title;
+        x: 8px;
+        width: parent.width - 16px;
+        border-radius: Theme.radius-md;
+        background: selected ? Theme.accent-soft-strong : more-touch.has-hover ? Theme.hover : transparent;
+        HorizontalLayout {
+            padding-left: 12px;
+            spacing: 8px;
+            Icon { y: (parent.height - self.height) / 2; source: Icons.star; size: 14px; tint: Theme.accent; }
+            Text {
+                text: data.title;
+                color: Theme.accent;
+                font-size: Theme.font-md;
+                font-weight: 500;
+                vertical-alignment: center;
+            }
+        }
+        more-touch := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { root.clicked(false); }
+            moved => { root.hovered(); }
+        }
+    }
+
+    if data.kind == RowKind.item: Rectangle {
+        accessible-role: list-item;
+        accessible-label: data.title + (data.collection != "" ? ", in " + data.collection : "") + (data.meta != "" ? ", " + data.meta : "");
+        accessible-item-selected: root.selected;
+        x: 8px;
+        width: parent.width - 16px;
+        height: parent.height - 2px;
+        y: 1px;
+        border-radius: Theme.radius-md;
+        background: selected ? Theme.accent-soft-strong : item-touch.has-hover ? Theme.hover : transparent;
+        animate background { duration: Theme.fast; }
+
+        // Selection bar on the left edge.
+        Rectangle {
+            x: 0;
+            width: 3px;
+            height: parent.height - 18px;
+            border-radius: 1.5px;
+            background: selected ? Theme.accent : transparent;
+        }
+
+        HorizontalLayout {
+            padding-left: 12px;
+            padding-right: 10px;
+            spacing: 12px;
+
+            // Leading badge: kind icon, or the pick number while multi-selecting.
+            Rectangle {
+                width: 30px;
+                height: 30px;
+                y: (parent.height - self.height) / 2;
+                border-radius: Theme.radius-md;
+                background: data.pick > 0 ? Theme.accent : picking ? Theme.surface : Theme.surface-2;
+                border-width: picking && data.pick == 0 ? 1.5px : 0;
+                border-color: Theme.border-strong;
+                if data.pick > 0: Text {
+                    text: data.pick;
+                    color: Theme.on-accent;
+                    font-weight: 700;
+                    font-size: Theme.font-md;
+                }
+                if data.pick == 0 && !picking: Icon {
+                    source: data.starred ? Icons.star-filled : data.is-snippet ? Icons.folder : Icons.clipboard;
+                    size: 15px;
+                    tint: data.starred ? Theme.star : selected ? Theme.accent : Theme.text-subtle;
+                }
+            }
+
+            VerticalLayout {
+                alignment: center;
+                spacing: 2px;
+                horizontal-stretch: 1;
+                if !data.highlight: Text {
+                    text: data.title;
+                    font-size: Theme.font-md + 0.5px;
+                    font-weight: 600;
+                    color: Theme.text;
+                    overflow: elide;
+                }
+                if data.highlight: StyledText {
+                    text: data.title-styled;
+                    default-font-size: Theme.font-md + 0.5px;
+                    default-color: Theme.text;
+                    max-lines: 1;
+                    height: 18px;
+                }
+                if data.preview != "" && !data.highlight: Text {
+                    text: data.preview;
+                    font-size: Theme.font-sm;
+                    color: Theme.text-subtle;
+                    overflow: elide;
+                }
+                if data.preview != "" && data.highlight: StyledText {
+                    text: data.preview-styled;
+                    default-font-size: Theme.font-sm;
+                    default-color: Theme.text-subtle;
+                    max-lines: 1;
+                    height: 16px;
+                }
+            }
+
+            // Trailing: collection chip or time, plus small markers.
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: end;
+                if data.rich: Icon {
+                    y: (parent.height - self.height) / 2;
+                    source: Icons.rich;
+                    size: 13px;
+                    tint: Theme.text-faint;
+                    accessible-role: image;
+                    accessible-label: "Has formatting";
+                }
+                if data.collection != "": Chip {
+                    y: (parent.height - self.height) / 2;
+                    text: data.collection;
+                    icon: Icons.folder;
+                    has-icon: true;
+                    max-width: 130px;
+                    fg: selected ? Theme.accent : Theme.text-subtle;
+                    fill: selected ? Theme.accent-soft : Theme.surface-2;
+                }
+                if data.meta != "": Text {
+                    text: data.meta;
+                    font-size: Theme.font-xs;
+                    color: Theme.text-faint;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        item-touch := TouchArea {
+            property <bool> ctrl-down;
+            mouse-cursor: pointer;
+            pointer-event(e) => {
+                if (e.kind == PointerEventKind.down) {
+                    self.ctrl-down = e.modifiers.control || e.modifiers.meta;
+                }
+            }
+            clicked => { root.clicked(self.ctrl-down); }
+            moved => { root.hovered(); }
+        }
+    }
+}
+
+export component PopupWindow inherits Window {
+    title: "Shift Paste";
+    no-frame: true;
+    always-on-top: true;
+    background: Theme.bg;
+    default-font-size: Theme.font-md;
+    min-width: 360px;
+    min-height: 300px;
+    preferred-width: 460px;
+    preferred-height: 540px;
+    icon: Icons.logo;
+
+    // Keep the standard widgets (text boxes, scrollbars) in the same light/dark scheme.
+    property <bool> dark-scheme: Theme.dark;
+    init => { Palette.color-scheme = self.dark-scheme ? ColorScheme.dark : ColorScheme.light; }
+    changed dark-scheme => { Palette.color-scheme = self.dark-scheme ? ColorScheme.dark : ColorScheme.light; }
+
+    // ---- data from Rust
+    in property <[PopupRow]> rows;
+    in property <int> current: -1;
+    in property <Keys> keys: { mod: "Ctrl", alt: "Alt", shift: "Shift", enter: "Enter" };
+    in property <string> count-text;
+    in property <int> picked-count;
+    in property <bool> paused;
+    in property <string> empty-title: "Nothing here yet";
+    in property <string> empty-message: "Copy some text and it will show up here.";
+    in property <bool> preview-open;
+    in property <length> preview-width: 380px;
+    // Which edges can be dragged to resize (macOS: only right/bottom/corner).
+    in property <bool> resize-all-edges: true;
+    in property <string> preview-kind;
+    in property <string> preview-title;
+    in property <string> preview-body;
+    in property <string> preview-meta;
+    in property <bool> menu-open;
+    in property <string> menu-title;
+    in property <[MenuEntry]> menu-items;
+    in property <int> menu-current;
+    in property <string> toast-text;
+    in property <string> toast-action;
+    in-out property <string> query;
+
+    // ---- events to Rust
+    callback query-edited(string);
+    // Returns true when the key was handled (so the text field doesn't get it).
+    callback handle-key(string /* key */, bool /* ctrl or cmd */, bool /* shift */, bool /* alt */) -> bool;
+    callback row-clicked(int, bool /* ctrl */);
+    callback row-hovered(int);
+    callback menu-clicked(int);
+    callback menu-hovered(int);
+    callback open-settings();
+    callback resume-recording();
+    callback toast-clicked();
+    callback focus-lost();
+    // Resizing from an edge: 0 N, 1 S, 2 E, 3 W, 4 NE, 5 NW, 6 SE, 7 SW.
+    callback resize-start(int);
+    callback resize-move();
+    callback resize-end();
+
+    public function focus-search() {
+        search-input.focus();
+        search-input.select-all();
+    }
+
+    // Scroll so the row spanning [top, top + h] is inside the visible part of the list.
+    public function reveal-row(top: length, h: length) {
+        if (top < -list.content-y) {
+            list.content-y = -top;
+        } else if (top + h > -list.content-y + list.visible-height) {
+            list.content-y = -(top + h - list.visible-height);
+        }
+    }
+
+    public function scroll-to-top() {
+        list.content-y = 0;
+    }
+
+    changed has-focus => {
+        if (!self.has-focus) { root.focus-lost(); }
+    }
+
+    out property <bool> has-focus: search-input.has-focus || keys-scope.has-focus;
+
+    keys-scope := FocusScope {
+        capture-key-pressed(event) => {
+            if (root.handle-key(event.text, event.modifiers.control || event.modifiers.meta, event.modifiers.shift, event.modifiers.alt)) {
+                return accept;
+            }
+            reject
+        }
+
+        Rectangle {
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            background: Theme.bg;
+
+            HorizontalLayout {
+                padding: 1px;
+                // ----------------------------------------------------------- list column
+                VerticalLayout {
+                    horizontal-stretch: 1;
+
+                    // Search field
+                    Rectangle {
+                        height: 56px;
+                        HorizontalLayout {
+                            padding-left: 18px;
+                            padding-right: 10px;
+                            spacing: 12px;
+                            Icon {
+                                y: (parent.height - self.height) / 2;
+                                source: Icons.search;
+                                size: 18px;
+                                tint: Theme.text-subtle;
+                            }
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                search-input := TextInput {
+                                    width: 100%;
+                                    height: 100%;
+                                    text <=> root.query;
+                                    font-size: Theme.font-lg + 1px;
+                                    color: Theme.text;
+                                    vertical-alignment: center;
+                                    single-line: true;
+                                    selection-background-color: Theme.accent-soft-strong;
+                                    selection-foreground-color: Theme.text;
+                                    accessible-role: text-input;
+                                    accessible-label: "Search";
+                                    edited => { root.query-edited(self.text); }
+                                }
+                                if root.query == "": Text {
+                                    x: 0;
+                                    text: "Search clipboard and snippets";
+                                    color: Theme.text-faint;
+                                    font-size: Theme.font-lg + 1px;
+                                    vertical-alignment: center;
+                                    height: parent.height;
+                                }
+                            }
+                            if root.query != "": IconButton {
+                                y: (parent.height - self.height) / 2;
+                                icon: Icons.close;
+                                label: "Clear search";
+                                icon-size: 13px;
+                                size: 26px;
+                                clicked => {
+                                    root.query = "";
+                                    root.query-edited("");
+                                    search-input.focus();
+                                }
+                            }
+                            IconButton {
+                                y: (parent.height - self.height) / 2;
+                                icon: Icons.sliders;
+                                label: "Settings";
+                                clicked => { root.open-settings(); }
+                            }
+                        }
+                    }
+                    Divider { }
+
+                    if root.paused: Rectangle {
+                        height: 32px;
+                        background: Theme.warning-soft;
+                        HorizontalLayout {
+                            padding-left: 18px;
+                            padding-right: 10px;
+                            spacing: 8px;
+                            Icon { y: (parent.height - self.height) / 2; source: Icons.pause; size: 13px; tint: Theme.star; }
+                            Text {
+                                text: "Recording is paused: new copies aren't saved.";
+                                font-size: Theme.font-sm;
+                                color: Theme.text-muted;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                                overflow: elide;
+                            }
+                            Text {
+                                text: "Resume";
+                                font-size: Theme.font-sm;
+                                font-weight: 600;
+                                color: Theme.accent;
+                                vertical-alignment: center;
+                                TouchArea { mouse-cursor: pointer; clicked => { root.resume-recording(); } }
+                            }
+                        }
+                    }
+
+                    // Results
+                    Rectangle {
+                        vertical-stretch: 1;
+                        list := ListView {
+                            visible: root.rows.length > 0;
+                            for item[i] in root.rows: ResultRow {
+                                data: item;
+                                selected: i == root.current;
+                                picking: root.picked-count > 0;
+                                keys: root.keys;
+                                clicked(ctrl) => { root.row-clicked(i, ctrl); }
+                                hovered => { root.row-hovered(i); }
+                            }
+                        }
+                        if root.rows.length == 0: EmptyState {
+                            icon: root.query == "" ? Icons.inbox : Icons.search;
+                            title: root.empty-title;
+                            message: root.empty-message;
+                        }
+                    }
+
+                    // Footer: contextual key hints + count
+                    Divider { }
+                    Rectangle {
+                        height: 34px;
+                        background: Theme.surface;
+                        HorizontalLayout {
+                            padding-left: 14px;
+                            padding-right: 14px;
+                            spacing: 14px;
+                            if root.picked-count == 0: KeyHint { key: root.keys.enter; action: "Paste"; }
+                            if root.picked-count == 0: KeyHint { key: root.keys.shift + " " + root.keys.enter; action: "Plain text"; }
+                            if root.picked-count == 0 && !root.preview-open: KeyHint { key: root.keys.alt + " " + root.keys.enter; action: "Transform"; }
+                            if root.picked-count == 0: KeyHint { key: "Tab"; action: root.preview-open ? "Hide preview" : "Preview"; }
+                            if root.picked-count > 0: Text {
+                                text: root.picked-count + " selected";
+                                font-size: Theme.font-xs;
+                                font-weight: 600;
+                                color: Theme.accent;
+                                vertical-alignment: center;
+                            }
+                            if root.picked-count > 0: KeyHint { key: root.keys.enter; action: "Paste all"; }
+                            if root.picked-count > 0: KeyHint { key: root.keys.alt + " " + root.keys.enter; action: "Join as…"; }
+                            if root.picked-count > 0: KeyHint { key: "Esc"; action: "Clear"; }
+                            Rectangle { horizontal-stretch: 1; }
+                            Text {
+                                text: root.count-text;
+                                font-size: Theme.font-xs;
+                                color: Theme.text-faint;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+
+                // -------------------------------------------------------- preview pane
+                if root.preview-open: VDivider { }
+                if root.preview-open: Rectangle {
+                    width: root.preview-width - 1px;
+                    background: Theme.surface;
+                    VerticalLayout {
+                        padding: 18px;
+                        spacing: 10px;
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Chip {
+                                text: root.preview-kind;
+                                fg: Theme.accent;
+                                fill: Theme.accent-soft;
+                            }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+                        Text {
+                            text: root.preview-title;
+                            font-size: Theme.font-lg;
+                            font-weight: 600;
+                            color: Theme.text;
+                            wrap: word-wrap;
+                            max-height: 44px;
+                            overflow: elide;
+                        }
+                        Rectangle {
+                            vertical-stretch: 1;
+                            border-radius: Theme.radius-md;
+                            background: Theme.bg;
+                            border-width: 1px;
+                            border-color: Theme.border;
+                            ScrollView {
+                                x: 1px;
+                                y: 1px;
+                                width: parent.width - 2px;
+                                height: parent.height - 2px;
+                                content-height: body.preferred-height + 24px;
+                                content-width: self.visible-width;
+                                body := Text {
+                                    x: 12px;
+                                    y: 12px;
+                                    width: parent.visible-width - 24px;
+                                    text: root.preview-body;
+                                    wrap: word-wrap;
+                                    font-size: Theme.font-md;
+                                    color: Theme.text;
+                                }
+                            }
+                        }
+                        Text {
+                            text: root.preview-meta;
+                            font-size: Theme.font-xs;
+                            color: Theme.text-subtle;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+            }
+
+            // ---------------------------------------------------------- menu overlay
+            if root.menu-open: Rectangle {
+                background: Theme.scrim;
+                TouchArea { clicked => { root.menu-clicked(-1); } }
+                Card {
+                    x: (parent.width - self.width) / 2;
+                    y: 64px;
+                    width: min(300px, parent.width - 32px);
+                    height: menu-layout.preferred-height;
+                    menu-layout := VerticalLayout {
+                        padding: 6px;
+                        spacing: 1px;
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            height: 26px;
+                            SectionLabel { text: root.menu-title; }
+                        }
+                        for entry[i] in root.menu-items: Rectangle {
+                            height: entry.section ? 24px : 32px;
+                            if entry.section: SectionLabel {
+                                x: 10px;
+                                text: entry.label;
+                            }
+                            if !entry.section: MenuRow {
+                                width: parent.width;
+                                text: entry.label;
+                                shortcut: entry.shortcut;
+                                selected: i == root.menu-current;
+                                clicked => { root.menu-clicked(i); }
+                                hovered => { root.menu-hovered(i); }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ------------------------------------------------- resize grips
+            for g in [
+                { dir: 0, x: 8px, y: 0px, w: root.width - 16px, h: 5px, all: true },
+                { dir: 1, x: 8px, y: root.height - 5px, w: root.width - 16px, h: 5px, all: false },
+                { dir: 2, x: root.width - 5px, y: 8px, w: 5px, h: root.height - 16px, all: false },
+                { dir: 3, x: 0px, y: 8px, w: 5px, h: root.height - 16px, all: true },
+                { dir: 4, x: root.width - 10px, y: 0px, w: 10px, h: 10px, all: true },
+                { dir: 5, x: 0px, y: 0px, w: 10px, h: 10px, all: true },
+                { dir: 6, x: root.width - 12px, y: root.height - 12px, w: 12px, h: 12px, all: false },
+                { dir: 7, x: 0px, y: root.height - 10px, w: 10px, h: 10px, all: true },
+            ]: TouchArea {
+                x: g.x;
+                y: g.y;
+                width: g.w;
+                height: g.h;
+                enabled: root.resize-all-edges || !g.all;
+                mouse-cursor: g.dir <= 1 ? MouseCursor.ns-resize
+                    : g.dir <= 3 ? MouseCursor.ew-resize
+                    : (g.dir == 4 || g.dir == 7) ? MouseCursor.nesw-resize
+                    : MouseCursor.nwse-resize;
+                pointer-event(e) => {
+                    if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+                        root.resize-start(g.dir);
+                    }
+                    if (e.kind == PointerEventKind.up) {
+                        root.resize-end();
+                    }
+                }
+                moved => { root.resize-move(); }
+            }
+
+            if root.toast-text != "": Toast {
+                x: 12px;
+                y: parent.height - self.height - 46px;
+                width: parent.width - 24px;
+                text: root.toast-text;
+                action-text: root.toast-action;
+                action => { root.toast-clicked(); }
+            }
+        }
+    }
+}
