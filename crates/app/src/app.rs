@@ -522,12 +522,20 @@ impl App {
                     HasWindowHandle, RawWindowHandle,
                 };
                 w.set_skip_taskbar(true);
+                let mut focused = false;
                 if let Ok(handle) = w.window_handle() {
                     if let RawWindowHandle::Win32(h) = handle.as_raw() {
                         platform::window::polish_popup(h.hwnd.get());
+                        // Not winit's focus_window(): it injects an Alt
+                        // keystroke, which lands in the app you were using.
+                        focused = platform::window::activate(h.hwnd.get());
                     }
                 }
+                if !focused {
+                    w.focus_window();
+                }
             }
+            #[cfg(not(windows))]
             w.focus_window();
         });
         self.popup.invoke_focus_search();
@@ -1321,7 +1329,14 @@ impl App {
                             "{e} The text is on the clipboard, so you can press Ctrl+V."
                         ));
                     }
-                })
+                });
+                // The app you pasted into keeps its size: if anything during
+                // the switch un-maximized or resized it, put it back.
+                if let Some(f) = focus {
+                    Timer::single_shot(Duration::from_millis(150), move || {
+                        platform::foreground::keep_size(f)
+                    });
+                }
             });
         });
     }

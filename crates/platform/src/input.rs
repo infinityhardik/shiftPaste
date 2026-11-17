@@ -37,14 +37,58 @@ fn letter(c: char) -> Key {
     }
 }
 
-/// Press the paste shortcut in the app in front.
-pub fn send_paste(keys: PasteKeys) -> Result<()> {
-    let mut e = enigo()?;
-    // Release modifiers the user may still hold (e.g. Shift from Shift+Enter)
-    // so the target sees exactly the paste shortcut.
+/// Release modifiers the user may still hold (e.g. Shift from Shift+Enter)
+/// so the target sees exactly the paste shortcut.
+#[cfg(not(windows))]
+fn release_held_modifiers(e: &mut Enigo) {
     for m in [Key::Shift, Key::Alt, Key::Control, Key::Meta] {
         let _ = e.key(m, Direction::Release);
     }
+}
+
+/// Windows: release only the modifiers that are really down. A stray Alt or
+/// Windows key release reaches the app and Windows as a "tap": it can open
+/// the app's menu or the Start menu, or turn the paste into a window command
+/// (Alt+Space, Win+arrows) that un-maximizes or moves the window. A neutral,
+/// unassigned key before releasing them keeps that from happening.
+#[cfg(windows)]
+fn release_held_modifiers(e: &mut Enigo) {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+        GetAsyncKeyState, VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_RCONTROL, VK_RMENU,
+        VK_RSHIFT, VK_RWIN,
+    };
+    /// Unassigned virtual key (what AutoHotkey uses as its "menu mask" key).
+    const MASK_KEY: u32 = 0xE8;
+    // SAFETY: GetAsyncKeyState only reads the global key state.
+    let down = |vk: u16| unsafe { GetAsyncKeyState(i32::from(vk)) } as u16 & 0x8000 != 0;
+    let held: Vec<(u16, Key)> = [
+        (VK_LSHIFT, Key::LShift),
+        (VK_RSHIFT, Key::RShift),
+        (VK_LCONTROL, Key::LControl),
+        (VK_RCONTROL, Key::RControl),
+        (VK_LMENU, Key::LMenu),
+        (VK_RMENU, Key::RMenu),
+        (VK_LWIN, Key::LWin),
+        (VK_RWIN, Key::RWin),
+    ]
+    .into_iter()
+    .filter(|(vk, _)| down(*vk))
+    .collect();
+    if held
+        .iter()
+        .any(|(vk, _)| [VK_LMENU, VK_RMENU, VK_LWIN, VK_RWIN].contains(vk))
+    {
+        let _ = e.key(Key::Other(MASK_KEY), Direction::Click);
+    }
+    for (_, key) in held {
+        let _ = e.key(key, Direction::Release);
+    }
+}
+
+/// Press the paste shortcut in the app in front.
+pub fn send_paste(keys: PasteKeys) -> Result<()> {
+    let mut e = enigo()?;
+    release_held_modifiers(&mut e);
     let (mods, key): (&[Key], Key) = match keys {
         PasteKeys::CtrlV => (&[Key::Control], letter('v')),
         PasteKeys::CtrlShiftV => (&[Key::Control, Key::Shift], letter('v')),

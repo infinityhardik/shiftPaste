@@ -51,6 +51,15 @@ pub fn send_to_running(cmd: Command) -> bool {
     let Ok(name) = socket_name().to_ns_name::<GenericNamespaced>() else {
         return false;
     };
+    // Windows: let the running app bring its popup or editor to the front
+    // (this short-lived process is the one the user just started).
+    #[cfg(windows)]
+    // SAFETY: no pointers involved.
+    unsafe {
+        windows_sys::Win32::UI::WindowsAndMessaging::AllowSetForegroundWindow(
+            windows_sys::Win32::UI::WindowsAndMessaging::ASFW_ANY,
+        );
+    }
     match Stream::connect(name) {
         Ok(mut conn) => conn
             .write_all(format!("{}\n", cmd.as_str()).as_bytes())

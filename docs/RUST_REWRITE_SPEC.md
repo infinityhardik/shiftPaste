@@ -380,6 +380,13 @@ history     (id, content, content_hash UNIQUE, html NULL, rtf NULL,
 | Tray icon | ✅ | ✅ menu-bar icon | ✅ needs AppIndicator support | same; vanilla GNOME needs the AppIndicator extension (Ubuntu ships it) |
 | Launch at login | Registry Run key (HKCU) | LaunchAgent | `~/.config/autostart` | same |
 
+### 4.1a Windows: giving focus back without resizing
+The app you paste into must look exactly as before: a maximized window stays maximized and nothing moves.
+- Focus is switched with `SetForegroundWindow` only (with an `AttachThreadInput` fallback). No `ShowWindow` on a visible window (`SW_RESTORE`/`SW_SHOWNORMAL` un-maximize); a minimized window gets `SW_RESTORE`, which returns it to maximized if it was.
+- No synthetic Alt to grab focus (winit's `focus_window()` does this; the Alt reaches the previous app and can open its menu).
+- Before pressing Ctrl+V, only modifiers that are really held are released, and a neutral key (vk `0xE8`) goes first when Alt or Win is held, so their release can't open a menu or the Start menu.
+- The target's maximized state and rectangle are remembered when the popup opens and checked after focus returns and again after the paste; any change is put back.
+
 ### 4.2 macOS specifics
 - Runs as a menu-bar app (`LSUIElement`, no Dock icon).
 - First run shows an onboarding sheet asking for **Accessibility** permission, which auto-paste needs. Without it, items are copied and the user presses Cmd+V.

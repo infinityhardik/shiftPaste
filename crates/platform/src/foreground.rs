@@ -57,6 +57,10 @@ pub fn current_app() -> Option<AppInfo> {
 pub struct FocusTarget {
     #[cfg(windows)]
     hwnd: isize,
+    /// Its size and maximized state when remembered, so a paste never
+    /// leaves it resized.
+    #[cfg(windows)]
+    placement: Option<win::Placement>,
     #[cfg(target_os = "macos")]
     pid: i32,
     #[cfg(not(any(windows, target_os = "macos")))]
@@ -69,7 +73,10 @@ pub struct FocusTarget {
 pub fn remember() -> Option<FocusTarget> {
     #[cfg(windows)]
     {
-        win::remember().map(|hwnd| FocusTarget { hwnd })
+        win::remember().map(|hwnd| FocusTarget {
+            hwnd,
+            placement: win::placement(hwnd),
+        })
     }
     #[cfg(target_os = "macos")]
     {
@@ -124,7 +131,7 @@ pub fn app_of(target: FocusTarget) -> Option<AppInfo> {
 
 #[cfg(windows)]
 mod win {
-    use windows_sys::Win32::Foundation::{CloseHandle, HWND};
+    use windows_sys::Win32::Foundation::{CloseHandle, HWND, RECT};
     use windows_sys::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
     use windows_sys::Win32::System::Threading::{
         OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
@@ -132,9 +139,74 @@ mod win {
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         GetClassNameW, GetForegroundWindow, GetTopWindow, GetWindow, GetWindowLongPtrW,
-        GetWindowTextLengthW, GetWindowThreadProcessId, IsWindowVisible, GWL_EXSTYLE, GW_HWNDNEXT,
-        GW_OWNER, WS_EX_TOOLWINDOW,
+        GetWindowRect, GetWindowTextLengthW, GetWindowThreadProcessId, IsIconic, IsWindow,
+        IsWindowVisible, IsZoomed, SetWindowPos, ShowWindow, GWL_EXSTYLE, GW_HWNDNEXT, GW_OWNER,
+        SWP_NOACTIVATE, SWP_NOOWNERZORDER, SWP_NOZORDER, SW_MAXIMIZE, SW_SHOWNOACTIVATE,
+        WS_EX_TOOLWINDOW,
     };
+
+    /// A window's maximized state and outer rectangle (left, top, right, bottom).
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct Placement {
+        maximized: bool,
+        rect: [i32; 4],
+    }
+
+    /// `None` when the window is gone or minimized.
+    pub fn placement(hwnd: isize) -> Option<Placement> {
+        let hwnd = hwnd as HWND;
+        let mut r = RECT {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        };
+        // SAFETY: plain queries; `r` is a valid out-pointer.
+        unsafe {
+            if IsWindow(hwnd) == 0 || IsIconic(hwnd) != 0 || GetWindowRect(hwnd, &mut r) == 0 {
+                return None;
+            }
+            Some(Placement {
+                maximized: IsZoomed(hwnd) != 0,
+                rect: [r.left, r.top, r.right, r.bottom],
+            })
+        }
+    }
+
+    /// Put the window back the way it was if switching to it (or pasting)
+    /// changed it: re-maximize it, or give back its exact size and position.
+    /// A window that was minimized or closed meanwhile is left alone.
+    pub fn keep(hwnd: isize, was: Placement) {
+        let Some(now) = placement(hwnd) else {
+            return;
+        };
+        if now == was || (was.maximized && now.maximized) {
+            return;
+        }
+        tracing::info!(?was, ?now, "the paste target changed size; putting it back");
+        let hwnd = hwnd as HWND;
+        // SAFETY: `hwnd` was validated by `placement` just above.
+        unsafe {
+            if was.maximized {
+                // It's the window being pasted into, so it is (and stays) in front.
+                ShowWindow(hwnd, SW_MAXIMIZE);
+                return;
+            }
+            if now.maximized {
+                ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+            }
+            let [l, t, r, b] = was.rect;
+            SetWindowPos(
+                hwnd,
+                std::ptr::null_mut(),
+                l,
+                t,
+                r - l,
+                b - t,
+                SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOACTIVATE,
+            );
+        }
+    }
 
     /// Taskbar, tray overflow and desktop windows: never paste targets.
     const SHELL_CLASSES: [&str; 6] = [
@@ -233,15 +305,16 @@ mod win {
     }
 }
 
-/// Bring the remembered window back to the front. Returns false if it's gone
-/// (on Linux the window manager does this when the popup hides).
+/// Bring the remembered window back to the front, exactly as it was: a
+/// maximized window stays maximized and nothing is moved or resized. Returns
+/// false if it's gone (on Linux the window manager does this when the popup
+/// hides).
 pub fn restore(target: FocusTarget) -> bool {
     #[cfg(windows)]
     {
-        use windows_sys::Win32::UI::WindowsAndMessaging::{IsWindow, SetForegroundWindow};
-        let hwnd = target.hwnd as windows_sys::Win32::Foundation::HWND;
-        // SAFETY: `hwnd` came from GetForegroundWindow; IsWindow validates it.
-        unsafe { IsWindow(hwnd) != 0 && SetForegroundWindow(hwnd) != 0 }
+        let ok = crate::window::activate(target.hwnd);
+        keep_size(target);
+        ok
     }
     #[cfg(target_os = "macos")]
     {
@@ -257,4 +330,16 @@ pub fn restore(target: FocusTarget) -> bool {
         let _ = target;
         false
     }
+}
+
+/// Windows: undo any change to the remembered window's size or maximized
+/// state since it was remembered (call after restoring focus and again after
+/// pasting). Elsewhere a no-op: macOS and Linux never resize on activation.
+pub fn keep_size(target: FocusTarget) {
+    #[cfg(windows)]
+    if let Some(was) = target.placement {
+        win::keep(target.hwnd, was);
+    }
+    #[cfg(not(windows))]
+    let _ = target;
 }
