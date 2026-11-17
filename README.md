@@ -86,6 +86,8 @@ Design decisions live in [`docs/RUST_REWRITE_SPEC.md`](docs/RUST_REWRITE_SPEC.md
 
 **Portable mode:** create a folder named `ShiftPaste-data` next to the executable, and everything is stored there instead.
 
+**Uninstalling on Windows** keeps this data unless you tick *Also delete my clipboard history, collections and settings*. Ticked, nothing of Shift Paste is left behind, for any account on the PC. For scripted removal, `uninstall.exe /S` keeps the data and `uninstall.exe /S /DELETEDATA` removes it.
+
 ## License
 
 MIT. See [LICENSE](LICENSE). The UI is built with [Slint](https://slint.dev) under its royalty-free license.

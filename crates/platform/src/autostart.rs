@@ -1,6 +1,6 @@
 //! Launch at login (Windows Run key, macOS LaunchAgent, Linux autostart entry).
 
-use auto_launch::{AutoLaunch, AutoLaunchBuilder, MacOSLaunchMode};
+use auto_launch::{AutoLaunch, AutoLaunchBuilder, MacOSLaunchMode, WindowsEnableMode};
 
 use crate::{Error, Result};
 
@@ -10,6 +10,9 @@ fn launcher() -> Result<AutoLaunch> {
         .set_app_name("Shift Paste")
         .set_app_path(&exe.to_string_lossy())
         .set_macos_launch_mode(MacOSLaunchMode::LaunchAgent)
+        // Per user (HKCU) only. The default tries the all-users key first,
+        // which succeeds whenever the app happens to run as admin.
+        .set_windows_enable_mode(WindowsEnableMode::CurrentUser)
         .build()
         .map_err(Error::new)
 }

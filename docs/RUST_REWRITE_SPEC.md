@@ -405,6 +405,8 @@ The app you paste into must look exactly as before: a maximized window stays max
 - **Release** (on tag `v*`), built by GitHub Actions and attached to a GitHub Release:
   - **Windows:** an **NSIS installer that asks for admin (UAC)** and installs for all users into `Program Files\Shift Paste`, with a Start-menu entry, optional desktop shortcut and uninstaller. Plus a **portable `.exe`** (zip, including the `ShiftPaste-data` folder so it runs in portable mode).
     - Before installing or uninstalling, the installer closes a running Shift Paste.
+    - The uninstaller's first page has a checkbox (unticked) **"Also delete my clipboard history, collections and settings"**, confirmed with a Yes/No prompt. Ticked, it deletes the data of **every account on the PC** (found through the ProfileList registry key, plus the current user's possibly redirected AppData) and any portable `ShiftPaste-data` folder, so no Shift Paste files remain. The finish page says whether data was kept. Silent: `uninstall.exe /S` keeps data; `/S /DELETEDATA` removes it.
+    - Uninstalling always removes the launch-at-login entries (`Run` and `StartupApproved\Run`, per user and all-users, for every signed-in account). The app only ever writes the per-user one.
     - Uninstalling keeps the user's data unless they tick "Also delete my data".
     - The "Launch Shift Paste" checkbox at the end starts the app **as the normal user, not as admin**. A program started from an admin installer would otherwise run with admin rights, and its data could land in the wrong user profile.
     - "Launch at login" stays per user (HKCU) and is controlled from the app's Settings.
