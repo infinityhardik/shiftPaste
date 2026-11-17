@@ -196,6 +196,7 @@ fn wire(app: &Rc<App>) {
         })
     });
     w.on_open_link(|url| platform::shell::open_url(&url));
+    w.on_open_editor(|| with_app(|app| crate::editor_ctl::open_editor(app, None)));
     w.on_picker_tab_changed(|_| with_prefs(|app, p| p.build_picker(app)));
     w.on_picker_filter_edited(|_| with_prefs(|app, p| p.build_picker(app)));
     w.on_picker_toggled(|i| with_prefs(|app, p| p.toggle_pick(app, i as usize)));

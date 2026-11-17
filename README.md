@@ -16,7 +16,7 @@ Press **Ctrl+Shift+V** (**⌘⇧V** on macOS) anywhere. A popup opens next to yo
 | **Collections** | Your own snippet lists (addresses, IDs, templates), with title, tags and private notes. Favorites (★) appear first. |
 | **Search that forgives typos** | Letters match in order, so `1884` finds “18 mm 8 x 4 LL Pro”. Type `@work` to search one collection or `#bank` for a tag. Accents and capitals don't matter. |
 | **Excel & CSV** | One-click import (each sheet becomes a collection) or a wizard with column mapping and a preview. Export one collection, all of them (a backup), or your history. |
-| **Paste your way** | `⇧ Enter` pastes plain text, `Alt Enter` changes case or joins several items (tab-separated fills Excel cells), `Ctrl+Space` picks several items. |
+| **Paste your way** | `Shift+Enter` pastes plain text, `Alt+Enter` changes case or joins several items (tab-separated fills Excel cells), `Ctrl+Space` picks several items. |
 | **Privacy** | 100% offline. Skips copies marked secret by password managers. App lists decide which apps are recorded and where the shortcut works. Pause anytime from the tray. |
 | **Everywhere** | Windows, macOS and Linux (X11 fully; Wayland with some limits). Light and dark themes, keyboard-first, screen-reader friendly. |
 

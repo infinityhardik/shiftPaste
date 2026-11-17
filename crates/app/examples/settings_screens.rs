@@ -43,9 +43,10 @@ fn main() {
     s.window().set_size(slint::LogicalSize::new(780.0, 600.0));
     s.set_version("2.0.0-dev".into());
     s.set_launch_at_login(true);
-    s.set_shortcut_caps(model(vec!["Ctrl".into(), "⇧".into(), "V".into()]));
+    s.set_shortcut_caps(model(vec!["Ctrl".into(), "Shift".into(), "V".into()]));
     s.set_pass_through_note(
-        "In other apps the shortcut is passed through, so their own Ctrl+⇧+V keeps working.".into(),
+        "In other apps the shortcut is passed through, so their own Ctrl+Shift+V keeps working."
+            .into(),
     );
     s.set_hotkey_apps(model(vec![
         AppRow {

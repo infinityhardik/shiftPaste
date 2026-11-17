@@ -27,6 +27,8 @@ component NavItem inherits Rectangle {
     in property <string> text;
     in property <image> icon;
     in property <bool> selected;
+    // Opens another window (shows an arrow) instead of a settings page.
+    in property <bool> opens-window;
     callback clicked();
     height: 34px;
     border-radius: Theme.radius-md;
@@ -38,7 +40,9 @@ component NavItem inherits Rectangle {
         padding-left: 10px;
         spacing: 10px;
         Icon { y: (parent.height - self.height) / 2; source: root.icon; size: 15px; tint: selected ? Theme.accent : Theme.text-subtle; }
-        Text { text: root.text; vertical-alignment: center; color: Theme.text; font-weight: selected ? 600 : 400; }
+        Text { text: root.text; vertical-alignment: center; color: Theme.text; font-weight: selected ? 600 : 400; horizontal-stretch: 1; }
+        if root.opens-window: Icon { y: (parent.height - self.height) / 2; source: Icons.external; size: 13px; tint: Theme.text-subtle; }
+        if root.opens-window: Rectangle { width: 4px; }
     }
     touch := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
 }
@@ -179,6 +183,7 @@ export component SettingsWindow inherits Window {
     callback export-all();
     callback reset-popup-size();
     callback open-link(string);
+    callback open-editor();
     callback picker-tab-changed(int);
     callback picker-filter-edited(string);
     callback picker-toggled(int);
@@ -215,6 +220,17 @@ export component SettingsWindow inherits Window {
                     NavItem { text: "Privacy"; icon: Icons.shield; selected: root.page == 3; clicked => { root.page = 3; } }
                     NavItem { text: "Data"; icon: Icons.database; selected: root.page == 4; clicked => { root.page = 4; } }
                     NavItem { text: "About"; icon: Icons.info; selected: root.page == 5; clicked => { root.page = 5; } }
+                    Rectangle { height: 8px; }
+                    Divider { }
+                    Rectangle { height: 8px; }
+                    NavItem {
+                        text: "Editor";
+                        icon: Icons.edit;
+                        opens-window: true;
+                        accessible-role: button;
+                        accessible-label: "Open the editor";
+                        clicked => { root.open-editor(); }
+                    }
                     Rectangle { vertical-stretch: 1; }
                 }
             }
@@ -388,7 +404,7 @@ export component SettingsWindow inherits Window {
                             SettingsCard {
                                 Toggle {
                                     text: "Keep formatting (HTML and RTF)";
-                                    description: "Paste rich text with its formatting; ⇧ Enter still pastes plain text. Uses more space.";
+                                    description: "Paste rich text with its formatting; Shift+Enter still pastes plain text. Uses more space.";
                                     checked <=> root.keep-formatting;
                                     toggled => { root.changed-history(); }
                                 }

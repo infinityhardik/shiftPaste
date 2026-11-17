@@ -159,7 +159,7 @@ component ResultRow inherits Rectangle {
                     default-font-size: Theme.font-sm;
                     default-color: Theme.text-subtle;
                     max-lines: 1;
-                    height: 16px;
+                    height: 17px;
                 }
             }
 
@@ -258,6 +258,7 @@ export component PopupWindow inherits Window {
     callback menu-clicked(int);
     callback menu-hovered(int);
     callback open-settings();
+    callback open-editor();
     callback resume-recording();
     callback toast-clicked();
     callback focus-lost();
@@ -361,8 +362,14 @@ export component PopupWindow inherits Window {
                             }
                             IconButton {
                                 y: (parent.height - self.height) / 2;
+                                icon: Icons.edit;
+                                label: "Open editor (" + root.keys.mod + "+E)";
+                                clicked => { root.open-editor(); }
+                            }
+                            IconButton {
+                                y: (parent.height - self.height) / 2;
                                 icon: Icons.sliders;
-                                label: "Settings";
+                                label: "Settings (" + root.keys.mod + "+,)";
                                 clicked => { root.open-settings(); }
                             }
                         }
@@ -419,16 +426,22 @@ export component PopupWindow inherits Window {
 
                     // Footer: contextual key hints + count
                     Divider { }
-                    Rectangle {
+                    footer := Rectangle {
                         height: 34px;
                         background: Theme.surface;
+                        // Placed explicitly, so the footer's width comes from the
+                        // list column and never from what's inside it.
                         HorizontalLayout {
-                            padding-left: 14px;
-                            padding-right: 14px;
-                            spacing: 14px;
-                            if root.picked-count == 0: KeyHint { key: root.keys.enter; action: "Paste"; }
-                            if root.picked-count == 0: KeyHint { key: root.keys.shift + " " + root.keys.enter; action: "Plain text"; }
-                            if root.picked-count == 0 && !root.preview-open: KeyHint { key: root.keys.alt + " " + root.keys.enter; action: "Transform"; }
+                            x: 0;
+                            y: 0;
+                            width: parent.width;
+                            height: parent.height;
+                            padding-left: 12px;
+                            padding-right: 12px;
+                            spacing: 12px;
+                            if root.picked-count == 0: KeyHint { enter: true; action: "Paste"; }
+                            if root.picked-count == 0: KeyHint { shift: true; enter: true; action: "Plain text"; }
+                            if root.picked-count == 0 && !root.preview-open: KeyHint { key: root.keys.alt; enter: true; action: "Transform"; }
                             if root.picked-count == 0: KeyHint { key: "Tab"; action: root.preview-open ? "Hide preview" : "Preview"; }
                             if root.picked-count > 0: Text {
                                 text: root.picked-count + " selected";
@@ -437,11 +450,12 @@ export component PopupWindow inherits Window {
                                 color: Theme.accent;
                                 vertical-alignment: center;
                             }
-                            if root.picked-count > 0: KeyHint { key: root.keys.enter; action: "Paste all"; }
-                            if root.picked-count > 0: KeyHint { key: root.keys.alt + " " + root.keys.enter; action: "Join as…"; }
+                            if root.picked-count > 0: KeyHint { enter: true; action: "Paste all"; }
+                            if root.picked-count > 0: KeyHint { key: root.keys.alt; enter: true; action: "Join as…"; }
                             if root.picked-count > 0: KeyHint { key: "Esc"; action: "Clear"; }
                             Rectangle { horizontal-stretch: 1; }
-                            Text {
+                            // The key hints come first; the count only when there's room.
+                            if footer.width >= 520px: Text {
                                 text: root.count-text;
                                 font-size: Theme.font-xs;
                                 color: Theme.text-faint;
